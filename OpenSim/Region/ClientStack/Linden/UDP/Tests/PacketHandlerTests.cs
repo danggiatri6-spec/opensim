@@ -172,6 +172,11 @@ namespace OpenSim.Region.ClientStack.LindenUDP.Tests
         public void GenericPacketHandlerNormalizesMethodAndRejectsDuplicates()
         {
             LLClientView client = CreateRegistrationOnlyClient();
+            FieldInfo genericHandlersField = typeof(LLClientView).GetField(
+                "m_genericPacketHandlers",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            genericHandlersField.SetValue(client, Activator.CreateInstance(genericHandlersField.FieldType));
+
             MethodInfo addHandler = typeof(LLClientView).GetMethod(
                 "AddGenericPacketHandler",
                 BindingFlags.Instance | BindingFlags.Public);
