@@ -44,6 +44,9 @@ jobs:
           test -f bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
           ls -lh bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
 
+      - name: Run focused UDP packet handler tests
+        run: dotnet run --configuration Release --project tools/udp-test-runner/UdpTestRunner.csproj
+
       - name: Upload UDP test assembly
         uses: actions/upload-artifact@v4
         with:
