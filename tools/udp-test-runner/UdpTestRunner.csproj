@@ -8,9 +8,11 @@
   <ItemGroup>
     <Reference Include="OpenSim.Region.ClientStack.LindenUDP.Tests">
       <HintPath>../../bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll</HintPath>
+      <Private>false</Private>
     </Reference>
     <Reference Include="nunit.framework">
       <HintPath>../../bin/nunit.framework.dll</HintPath>
+      <Private>false</Private>
     </Reference>
   </ItemGroup>
 </Project>
