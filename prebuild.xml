@@ -2789,8 +2789,8 @@
       <Reference name="OpenSim.Region.ClientStack.LindenUDP"/>
 
       <Files>
-        <!-- Keep this focused project independent from other legacy UDP tests
-             that still depend on OpenSim.Tests.Common and older service modules. -->
+        Keep this focused project independent from other legacy UDP tests
+             that still depend on OpenSim.Tests.Common and older service modules.
         <Match pattern="PacketHandlerTests.cs" recurse="false"/>
       </Files>
     </Project>
