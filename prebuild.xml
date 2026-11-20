@@ -3060,6 +3060,30 @@
       </Files>
     </Project>
 -->
+
+    <!-- OpenSim-next focused UDP registration tests.
+         Keep this project active independently of the legacy test suite block above. -->
+    <Project name="OpenSim.Region.ClientStack.LindenUDP.Tests" path="OpenSim/Region/ClientStack/Linden/UDP/Tests" type="Library">
+      <Configuration name="Debug">
+        <Options>
+          <OutputPath>../../../../../../bin/</OutputPath>
+        </Options>
+      </Configuration>
+      <Configuration name="Release">
+        <Options>
+          <OutputPath>../../../../../../bin/</OutputPath>
+        </Options>
+      </Configuration>
+      <ReferencePath>../../../../../../bin/</ReferencePath>
+      <Reference name="nunit.framework" path="../../../../../../bin/"/>
+      <Reference name="OpenMetaverse" path="../../../../../../bin/"/>
+      <Reference name="OpenMetaverseTypes" path="../../../../../../bin/"/>
+      <Reference name="OpenSim.Region.ClientStack.LindenUDP"/>
+      <Files>
+        <Match pattern="*.cs" recurse="false"/>
+      </Files>
+    </Project>
+
     <?include file="addon-modules/*/prebuild*.xml" ?>
 
   </Solution>
