@@ -25,7 +25,10 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System;
@@ -161,7 +164,7 @@ namespace OpenSim.Region.ClientStack.LindenUDP.Tests
             LLClientView client = CreateRegistrationOnlyClient();
 
             Assert.That(
-                InvokeProcessPacketMethod(client, new AgentFoleyPacket()),
+                InvokeProcessPacketMethod(client, new PacketAckPacket()),
                 Is.False);
         }
 
@@ -169,18 +172,29 @@ namespace OpenSim.Region.ClientStack.LindenUDP.Tests
         public void GenericPacketHandlerNormalizesMethodAndRejectsDuplicates()
         {
             LLClientView client = CreateRegistrationOnlyClient();
-            GenericMessage firstHandler = (sender, method, parameters) => { };
-            GenericMessage secondHandler = (sender, method, parameters) => { };
+            MethodInfo addHandler = typeof(LLClientView).GetMethod(
+                "AddGenericPacketHandler",
+                BindingFlags.Instance | BindingFlags.Public);
+            Type delegateType = addHandler.GetParameters()[1].ParameterType;
+            ParameterExpression[] parameters = delegateType.GetMethod("Invoke")
+                .GetParameters()
+                .Select(parameter => Expression.Parameter(parameter.ParameterType, parameter.Name))
+                .ToArray();
 
-            Assert.That(client.AddGenericPacketHandler("  HELLO  ", firstHandler), Is.True);
-            Assert.That(client.AddGenericPacketHandler("hello", secondHandler), Is.False);
+            Delegate firstHandler = Expression.Lambda(
+                delegateType, Expression.Empty(), parameters).Compile();
+            Delegate secondHandler = Expression.Lambda(
+                delegateType, Expression.Empty(), parameters).Compile();
+
+            Assert.That(addHandler.Invoke(client, new object[] { "  HELLO  ", firstHandler }), Is.True);
+            Assert.That(addHandler.Invoke(client, new object[] { "hello", secondHandler }), Is.False);
 
             FieldInfo handlersField = typeof(LLClientView).GetField(
                 "m_genericPacketHandlers",
                 BindingFlags.Instance | BindingFlags.NonPublic);
-            var handlers = (Dictionary<string, GenericMessage>)handlersField.GetValue(client);
+            IDictionary handlers = (IDictionary)handlersField.GetValue(client);
 
-            Assert.That(handlers.ContainsKey("hello"), Is.True);
+            Assert.That(handlers.Contains("hello"), Is.True);
             Assert.That(handlers["hello"], Is.SameAs(firstHandler));
         }
     }
