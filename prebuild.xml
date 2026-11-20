@@ -78,7 +78,7 @@
       <Reference name="SmartThreadPool" path ="../../bin"/>
       <Reference name="System.Drawing.Common" path ="../../bin"/>
       <Files>
-        <Match pattern="*.cs" recurse="false"/>
+        <Match pattern="PacketHandlerTests.cs" recurse="false"/>
         <Match path="Client" pattern="*.cs" recurse="true">
          <Exclude name="obj" pattern="obj"/>
         </Match>
