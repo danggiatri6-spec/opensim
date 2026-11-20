@@ -38,3 +38,15 @@ jobs:
 
       - name: Build OpenSim
         run: dotnet build --configuration Release OpenSim.sln
+
+      - name: Verify UDP test assembly was compiled
+        run: |
+          test -f bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
+          ls -lh bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
+
+      - name: Upload UDP test assembly
+        uses: actions/upload-artifact@v4
+        with:
+          name: opensim-next-udp-tests
+          path: bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
+          if-no-files-found: error
