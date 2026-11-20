@@ -28,6 +28,7 @@
 using System.Collections.Generic;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System;
 using NUnit.Framework;
 using OpenMetaverse.Packets;
 
@@ -116,6 +117,71 @@ namespace OpenSim.Region.ClientStack.LindenUDP.Tests
             var handlers = (Dictionary<PacketType, LLClientView.PacketProcessor>)handlersField.GetValue(client);
 
             Assert.That(handlers[PacketType.AgentUpdate].Async, Is.False);
+        }
+
+        private static bool InvokeProcessPacketMethod(LLClientView client, Packet packet)
+        {
+            MethodInfo method = typeof(LLClientView).GetMethod(
+                "ProcessPacketMethod",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.That(method, Is.Not.Null, "ProcessPacketMethod must exist");
+            return (bool)method.Invoke(client, new object[] { packet });
+        }
+
+        [Test]
+        public void StaticPacketHandlerTakesPrecedenceOverLocalHandler()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+            bool localHandlerInvoked = false;
+
+            Assert.That(
+                client.AddLocalPacketHandler(
+                    PacketType.VelocityInterpolateOn,
+                    packet => localHandlerInvoked = true,
+                    false),
+                Is.True);
+
+            bool handled = InvokeProcessPacketMethod(client, new VelocityInterpolateOnPacket());
+
+            FieldInfo velocityField = typeof(LLClientView).GetField(
+                "m_VelocityInterpolate",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.That(handled, Is.True);
+            Assert.That(localHandlerInvoked, Is.False,
+                "The static handler must win when both handler tables contain the packet type");
+            Assert.That(velocityField.GetValue(client), Is.True,
+                "The static VelocityInterpolateOn handler should have executed");
+        }
+
+        [Test]
+        public void UnknownPacketWithoutRegisteredHandlerReturnsFalse()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+
+            Assert.That(
+                InvokeProcessPacketMethod(client, new AgentFoleyPacket()),
+                Is.False);
+        }
+
+        [Test]
+        public void GenericPacketHandlerNormalizesMethodAndRejectsDuplicates()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+            GenericMessage firstHandler = (sender, method, parameters) => { };
+            GenericMessage secondHandler = (sender, method, parameters) => { };
+
+            Assert.That(client.AddGenericPacketHandler("  HELLO  ", firstHandler), Is.True);
+            Assert.That(client.AddGenericPacketHandler("hello", secondHandler), Is.False);
+
+            FieldInfo handlersField = typeof(LLClientView).GetField(
+                "m_genericPacketHandlers",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var handlers = (Dictionary<string, GenericMessage>)handlersField.GetValue(client);
+
+            Assert.That(handlers.ContainsKey("hello"), Is.True);
+            Assert.That(handlers["hello"], Is.SameAs(firstHandler));
         }
     }
 }
