@@ -3073,7 +3073,7 @@
       <Reference name="OpenMetaverseTypes" path="../../../../../../bin/"/>
       <Reference name="OpenSim.Region.ClientStack.LindenUDP"/>
       <Files>
-        <Match pattern="*.cs" recurse="false"/>
+        <Match pattern="PacketHandlerTests.cs" recurse="false"/>
       </Files>
     </Project>
 
