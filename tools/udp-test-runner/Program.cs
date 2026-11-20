@@ -1,11 +1,16 @@
 using System.Reflection;
 using System.Runtime.Loader;
-using OpenSim.Region.ClientStack.LindenUDP.Tests;
 
-// OpenSim's generated assemblies live in the repository bin directory.
-// Resolve their transitive dependencies there without copying the whole bin
-// directory into this runner's output (which may contain stale/missing DLLs).
+// OpenSim assemblies are generated into the repository bin directory.
+// Load the test assembly by path and resolve its dependencies from that directory.
+// Keeping the runner independent of OpenSim/NUnit compile-time references prevents
+// MSBuild from trying to copy every transitive simulator dependency.
 var binDirectory = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../bin"));
+var testAssemblyPath = Path.Combine(binDirectory, "OpenSim.Region.ClientStack.LindenUDP.Tests.dll");
+
+if (!File.Exists(testAssemblyPath))
+    throw new FileNotFoundException("UDP test assembly was not built.", testAssemblyPath);
+
 AssemblyLoadContext.Default.Resolving += (_, assemblyName) =>
 {
     var candidate = Path.Combine(binDirectory, assemblyName.Name + ".dll");
@@ -14,29 +19,37 @@ AssemblyLoadContext.Default.Resolving += (_, assemblyName) =>
         : null;
 };
 
-var tests = new PacketHandlerTests();
-Run(nameof(tests.FirstLocalPacketHandlerRegistrationSucceeds),
-    tests.FirstLocalPacketHandlerRegistrationSucceeds);
-Run(nameof(tests.DuplicateLocalPacketHandlerRegistrationIsRejected),
-    tests.DuplicateLocalPacketHandlerRegistrationIsRejected);
-Run(nameof(tests.LocalPacketHandlerDefaultsToAsynchronous),
-    tests.LocalPacketHandlerDefaultsToAsynchronous);
-Run(nameof(tests.LocalPacketHandlerCanBeRegisteredAsSynchronous),
-    tests.LocalPacketHandlerCanBeRegisteredAsSynchronous);
+var testAssembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(testAssemblyPath);
+var testType = testAssembly.GetType(
+    "OpenSim.Region.ClientStack.LindenUDP.Tests.PacketHandlerTests",
+    throwOnError: true)!;
+var instance = Activator.CreateInstance(testType)
+    ?? throw new InvalidOperationException("Could not create PacketHandlerTests.");
 
-Console.WriteLine("All 4 focused UDP packet-handler tests passed.");
-
-static void Run(string name, Action test)
+var testNames = new[]
 {
+    "FirstLocalPacketHandlerRegistrationSucceeds",
+    "DuplicateLocalPacketHandlerRegistrationIsRejected",
+    "LocalPacketHandlerDefaultsToAsynchronous",
+    "LocalPacketHandlerCanBeRegisteredAsSynchronous"
+};
+
+foreach (var name in testNames)
+{
+    var method = testType.GetMethod(name, BindingFlags.Instance | BindingFlags.Public)
+        ?? throw new MissingMethodException(testType.FullName, name);
+
     try
     {
-        test();
+        method.Invoke(instance, null);
         Console.WriteLine($"PASS {name}");
     }
-    catch (Exception ex)
+    catch (TargetInvocationException ex) when (ex.InnerException is not null)
     {
         Console.Error.WriteLine($"FAIL {name}");
-        Console.Error.WriteLine(ex);
-        throw;
+        Console.Error.WriteLine(ex.InnerException);
+        throw ex.InnerException;
     }
 }
+
+Console.WriteLine($"All {testNames.Length} focused UDP packet-handler tests passed.");
