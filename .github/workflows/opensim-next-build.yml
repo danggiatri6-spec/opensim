@@ -1,0 +1,40 @@
+name: OpenSim-next build
+
+on:
+  push:
+    branches:
+      - opensim-next-dev
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgdiplus libc6-dev
+
+      - name: Generate solution and project files
+        run: |
+          chmod +x ./runprebuild.sh
+          ./runprebuild.sh
+
+      - name: Build OpenSim
+        run: dotnet build --configuration Release OpenSim.sln
