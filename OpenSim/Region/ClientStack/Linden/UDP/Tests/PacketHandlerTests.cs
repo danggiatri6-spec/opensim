@@ -25,80 +25,97 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-using Nini.Config;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using NUnit.Framework;
-using OpenMetaverse;
 using OpenMetaverse.Packets;
-using OpenSim.Framework;
-using OpenSim.Tests.Common;
 
 namespace OpenSim.Region.ClientStack.LindenUDP.Tests
 {
     /// <summary>
-    /// Tests for the LL packet handler
+    /// Characterization tests for per-client packet handler registration.
+    ///
+    /// LLClientView's constructor requires a fully initialized Scene, UDP server,
+    /// UDP client, and authenticated session. These tests isolate registration
+    /// by creating an uninitialized instance and explicitly initializing only
+    /// the handler dictionary touched by AddLocalPacketHandler.
     /// </summary>
     [TestFixture]
-    public class PacketHandlerTests : OpenSimTestCase
+    public class PacketHandlerTests
     {
-//        [Test]
-//        /// <summary>
-//        /// More a placeholder, really
-//        /// </summary>
-//        public void InPacketTest()
-//        {
-//            TestHelper.InMethod();
-//
-//            AgentCircuitData agent = new AgentCircuitData();
-//            agent.AgentID = UUID.Random();
-//            agent.firstname = "testfirstname";
-//            agent.lastname = "testlastname";
-//            agent.SessionID = UUID.Zero;
-//            agent.SecureSessionID = UUID.Zero;
-//            agent.circuitcode = 123;
-//            agent.BaseFolder = UUID.Zero;
-//            agent.InventoryFolder = UUID.Zero;
-//            agent.startpos = Vector3.Zero;
-//            agent.CapsPath = "http://wibble.com";
-//
-//            TestLLUDPServer testLLUDPServer;
-//            TestLLPacketServer testLLPacketServer;
-//            AgentCircuitManager acm;
-//            IScene scene = new MockScene();
-//            SetupStack(scene, out testLLUDPServer, out testLLPacketServer, out acm);
-//
-//            TestClient testClient = new TestClient(agent, scene);
-//
-//            LLPacketHandler packetHandler
-//                = new LLPacketHandler(testClient, testLLPacketServer, new ClientStackUserSettings());
-//
-//            packetHandler.InPacket(new AgentAnimationPacket());
-//            LLQueItem receivedPacket = packetHandler.PacketQueue.Dequeue();
-//
-//            Assert.That(receivedPacket, Is.Not.Null);
-//            Assert.That(receivedPacket.Incoming, Is.True);
-//            Assert.That(receivedPacket.Packet, Is.TypeOf(typeof(AgentAnimationPacket)));
-//        }
-//
-//        /// <summary>
-//        /// Add a client for testing
-//        /// </summary>
-//        /// <param name="scene"></param>
-//        /// <param name="testLLUDPServer"></param>
-//        /// <param name="testPacketServer"></param>
-//        /// <param name="acm">Agent circuit manager used in setting up the stack</param>
-//        protected void SetupStack(
-//            IScene scene, out TestLLUDPServer testLLUDPServer, out TestLLPacketServer testPacketServer,
-//            out AgentCircuitManager acm)
-//        {
-//            IConfigSource configSource = new IniConfigSource();
-//            ClientStackUserSettings userSettings = new ClientStackUserSettings();
-//            testLLUDPServer = new TestLLUDPServer();
-//            acm = new AgentCircuitManager();
-//
-//            uint port = 666;
-//            testLLUDPServer.Initialise(null, ref port, 0, false, configSource, acm);
-//            testPacketServer = new TestLLPacketServer(testLLUDPServer, userSettings);
-//            testLLUDPServer.LocalScene = scene;
-//        }
+        private static LLClientView CreateRegistrationOnlyClient()
+        {
+            LLClientView client = (LLClientView)RuntimeHelpers.GetUninitializedObject(typeof(LLClientView));
+
+            FieldInfo handlersField = typeof(LLClientView).GetField(
+                "m_packetHandlers",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            Assert.That(handlersField, Is.Not.Null, "LLClientView handler dictionary field must exist");
+
+            handlersField.SetValue(client, new Dictionary<PacketType, LLClientView.PacketProcessor>());
+
+            return client;
+        }
+
+        [Test]
+        public void FirstLocalPacketHandlerRegistrationSucceeds()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+
+            bool registered = client.AddLocalPacketHandler(PacketType.AgentUpdate, packet => { });
+
+            Assert.That(registered, Is.True);
+        }
+
+        [Test]
+        public void DuplicateLocalPacketHandlerRegistrationIsRejected()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+            PacketMethod firstHandler = packet => { };
+            PacketMethod secondHandler = packet => { };
+
+            Assert.That(client.AddLocalPacketHandler(PacketType.AgentUpdate, firstHandler), Is.True);
+            Assert.That(client.AddLocalPacketHandler(PacketType.AgentUpdate, secondHandler), Is.False);
+
+            FieldInfo handlersField = typeof(LLClientView).GetField(
+                "m_packetHandlers",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var handlers = (Dictionary<PacketType, LLClientView.PacketProcessor>)handlersField.GetValue(client);
+
+            Assert.That(handlers[PacketType.AgentUpdate].method, Is.SameAs(firstHandler),
+                "A duplicate registration must not replace the original handler");
+        }
+
+        [Test]
+        public void LocalPacketHandlerDefaultsToAsynchronous()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+
+            Assert.That(client.AddLocalPacketHandler(PacketType.AgentUpdate, packet => { }), Is.True);
+
+            FieldInfo handlersField = typeof(LLClientView).GetField(
+                "m_packetHandlers",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var handlers = (Dictionary<PacketType, LLClientView.PacketProcessor>)handlersField.GetValue(client);
+
+            Assert.That(handlers[PacketType.AgentUpdate].Async, Is.True);
+        }
+
+        [Test]
+        public void LocalPacketHandlerCanBeRegisteredAsSynchronous()
+        {
+            LLClientView client = CreateRegistrationOnlyClient();
+
+            Assert.That(client.AddLocalPacketHandler(PacketType.AgentUpdate, packet => { }, false), Is.True);
+
+            FieldInfo handlersField = typeof(LLClientView).GetField(
+                "m_packetHandlers",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            var handlers = (Dictionary<PacketType, LLClientView.PacketProcessor>)handlersField.GetValue(client);
+
+            Assert.That(handlers[PacketType.AgentUpdate].Async, Is.False);
+        }
     }
 }
