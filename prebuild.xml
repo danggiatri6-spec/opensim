@@ -2783,22 +2783,15 @@
       </Configuration>
 
       <ReferencePath>../../../../../../bin/</ReferencePath>
-      <Reference name="log4net" path="../../../../../../bin/"/>
-      <Reference name="Nini" path="../../../../../../bin/"/>
       <Reference name="nunit.framework" path="../../../../../../bin/"/>
       <Reference name="OpenMetaverse" path="../../../../../../bin/"/>
       <Reference name="OpenMetaverseTypes" path="../../../../../../bin/"/>
-      <Reference name="OpenSim.Framework"/>
-      <Reference name="OpenSim.Framework.Monitoring"/>
       <Reference name="OpenSim.Region.ClientStack.LindenUDP"/>
-      <Reference name="OpenSim.Region.CoreModules"/>
-      <Reference name="OpenSim.Region.Framework"/>
-      <Reference name="OpenSim.Services.Interfaces"/>
-      <Reference name="OpenSim.Tests.Common"/>
 
       <Files>
-        <Match pattern="*.cs" recurse="false"/>
-        <Match buildAction="EmbeddedResource" path="Resources" pattern="*"/>
+        <!-- Keep this focused project independent from legacy UDP tests that
+             still depend on OpenSim.Tests.Common and older service modules. -->
+        <Match pattern="PacketHandlerTests.cs" recurse="false"/>
       </Files>
     </Project>
 
