@@ -31,7 +31,10 @@ var testNames = new[]
     "FirstLocalPacketHandlerRegistrationSucceeds",
     "DuplicateLocalPacketHandlerRegistrationIsRejected",
     "LocalPacketHandlerDefaultsToAsynchronous",
-    "LocalPacketHandlerCanBeRegisteredAsSynchronous"
+    "LocalPacketHandlerCanBeRegisteredAsSynchronous",
+    "StaticPacketHandlerTakesPrecedenceOverLocalHandler",
+    "UnknownPacketWithoutRegisteredHandlerReturnsFalse",
+    "GenericPacketHandlerNormalizesMethodAndRejectsDuplicates"
 };
 
 foreach (var name in testNames)
