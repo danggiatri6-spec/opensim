@@ -6,7 +6,7 @@ This document records the initial direction for evolving this repository into Op
 
 ## Product direction
 
-See the [OpenSim-next Product Charter](../product/open-sim-next-product-charter.md) for the long-term vision, six modernization pillars, three platform foundations, constraints, and success criteria.
+See the [OpenSim-next Product Charter](../product/open-sim-next-product-charter.md) for the long-term vision, six modernization pillars, three platform foundations, constraints, and success criteria.\n\nSee the [PC Viewer Architecture](./viewer-architecture.md) for the proposed standalone Viewer repository, module boundaries, renderer API responsibilities, first vertical slice, and compatibility strategy.
 
 
 OpenSim-next will begin as a centrally managed virtual-world grid:
