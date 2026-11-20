@@ -12,9 +12,5 @@
     <Reference Include="nunit.framework">
       <HintPath>../../bin/nunit.framework.dll</HintPath>
     </Reference>
-    <Content Include="../../bin/*.dll"
-             Exclude="../../bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll;../../bin/nunit.framework.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </Content>
   </ItemGroup>
 </Project>
