@@ -395,6 +395,7 @@ namespace OpenSim.Region.ClientStack.Linden
 
                 lock (module.m_invitationLock)
                 {
+                    module.PruneExpiredSessions(DateTime.UtcNow);
                     if (module.m_sessions.Count >= MaxActiveSessions ||
                         module.HasActiveSession(invitation.Requester) ||
                         module.HasActiveSession(invitation.Target))
@@ -447,6 +448,7 @@ namespace OpenSim.Region.ClientStack.Linden
             InteractionSession session;
             lock (module.m_invitationLock)
             {
+                module.PruneExpiredSessions(DateTime.UtcNow);
                 if (!module.m_sessions.TryGetValue(sessionID, out session))
                 {
                     WriteReply(response, HttpStatusCode.NotFound, "session_not_found_or_expired");
