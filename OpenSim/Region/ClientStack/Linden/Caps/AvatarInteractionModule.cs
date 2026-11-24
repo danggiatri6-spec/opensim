@@ -43,9 +43,9 @@ namespace OpenSim.Region.ClientStack.Linden
     /// and server-side eligibility checks. Legacy viewers do not request this cap.
     /// </summary>
     [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule", Id = "AvatarInteractionModule")]
-    public class AvatarInteractionModule : ISharedRegionModule
+    public class AvatarInteractionModule : INonSharedRegionModule
     {
-        private readonly List<Scene> m_scenes = new();
+        private Scene m_scene;
 
         public string Name => "AvatarInteractionModule";
         public Type ReplaceableInterface => null;
@@ -54,15 +54,14 @@ namespace OpenSim.Region.ClientStack.Linden
 
         public void AddRegion(Scene scene)
         {
-            lock (m_scenes)
-                m_scenes.Add(scene);
+            m_scene = scene;
         }
 
         public void RemoveRegion(Scene scene)
         {
             scene.EventManager.OnRegisterCaps -= RegisterCaps;
-            lock (m_scenes)
-                m_scenes.Remove(scene);
+            if (m_scene == scene)
+                m_scene = null;
         }
 
         public void RegionLoaded(Scene scene)
@@ -75,24 +74,11 @@ namespace OpenSim.Region.ClientStack.Linden
 
         private void RegisterCaps(UUID agentID, Caps caps)
         {
-            Scene scene = null;
-            lock (m_scenes)
-            {
-                foreach (Scene candidate in m_scenes)
-                {
-                    if (candidate.TryGetScenePresence(agentID, out ScenePresence presence) && presence != null)
-                    {
-                        scene = candidate;
-                        break;
-                    }
-                }
-            }
-
-            if (scene == null)
+            if (m_scene == null)
                 return;
 
             string capPath = "/" + UUID.Random().ToString();
-            Scene registeredScene = scene;
+            Scene registeredScene = m_scene;
             caps.RegisterSimpleHandler("AvatarInteraction",
                 new SimpleStreamHandler(capPath, (request, response) =>
                     HandleRequest(registeredScene, agentID, request, response)));
