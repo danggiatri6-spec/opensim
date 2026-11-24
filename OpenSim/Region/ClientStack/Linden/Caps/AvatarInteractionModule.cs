@@ -92,11 +92,15 @@ namespace OpenSim.Region.ClientStack.Linden
         {
             m_scene = scene;
             scene.RegisterModuleInterface<AvatarInteractionModule>(this);
+            scene.EventManager.OnMakeChildAgent += HandleMakeChildAgent;
+            scene.EventManager.OnRemovePresence += HandleRemovePresence;
         }
 
         public void RemoveRegion(Scene scene)
         {
             scene.EventManager.OnRegisterCaps -= RegisterCaps;
+            scene.EventManager.OnMakeChildAgent -= HandleMakeChildAgent;
+            scene.EventManager.OnRemovePresence -= HandleRemovePresence;
             if (m_scene == scene)
             {
                 lock (m_invitationLock)
@@ -117,6 +121,73 @@ namespace OpenSim.Region.ClientStack.Linden
 
         public void PostInitialise() { }
         public void Close() { }
+
+        private void HandleMakeChildAgent(ScenePresence presence)
+        {
+            if (presence != null)
+                EndInteractionsForPresence(presence.UUID, "participant_left_region");
+        }
+
+        private void HandleRemovePresence(UUID agentID)
+        {
+            EndInteractionsForPresence(agentID, "participant_disconnected");
+        }
+
+        private void EndInteractionsForPresence(UUID agentID, string reason)
+        {
+            List<InteractionSession> endedSessions = new List<InteractionSession>();
+            List<InteractionInvitation> endedInvitations = new List<InteractionInvitation>();
+
+            lock (m_invitationLock)
+            {
+                List<UUID> invitationIDs = new List<UUID>();
+                foreach (KeyValuePair<UUID, InteractionInvitation> pair in m_invitations)
+                {
+                    if (pair.Value.Requester == agentID || pair.Value.Target == agentID)
+                    {
+                        invitationIDs.Add(pair.Key);
+                        endedInvitations.Add(pair.Value);
+                    }
+                }
+
+                foreach (UUID id in invitationIDs)
+                    m_invitations.Remove(id);
+
+                List<UUID> sessionIDs = new List<UUID>();
+                foreach (KeyValuePair<UUID, InteractionSession> pair in m_sessions)
+                {
+                    if (pair.Value.Requester == agentID || pair.Value.Target == agentID)
+                    {
+                        sessionIDs.Add(pair.Key);
+                        endedSessions.Add(pair.Value);
+                    }
+                }
+
+                foreach (UUID id in sessionIDs)
+                    m_sessions.Remove(id);
+
+                // Drop the sender's rolling rate-limit state as well; the UUID can
+                // reconnect later and should start with a fresh local rate window.
+                m_inviteAttempts.Remove(agentID);
+            }
+
+            // Enqueue notifications after releasing the state lock. Event queue
+            // callbacks must not run while the invitation/session dictionaries are locked.
+            foreach (InteractionInvitation invitation in endedInvitations)
+            {
+                UUID other = invitation.Requester == agentID
+                    ? invitation.Target : invitation.Requester;
+                EnqueueInteractionEvent(other, "AvatarInteractionEnded",
+                    BuildRequestBody(invitation, "ended", reason));
+            }
+
+            foreach (InteractionSession session in endedSessions)
+            {
+                OSDMap ended = BuildSessionBody(session, "ended", reason);
+                EnqueueInteractionEvent(session.Requester, "AvatarInteractionEnded", ended);
+                EnqueueInteractionEvent(session.Target, "AvatarInteractionEnded", ended);
+            }
+        }
 
         private void RegisterCaps(UUID agentID, Caps caps)
         {
