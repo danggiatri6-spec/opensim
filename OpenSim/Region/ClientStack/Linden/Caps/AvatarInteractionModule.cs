@@ -31,20 +31,37 @@ using System.Net;
 using Mono.Addins;
 using Nini.Config;
 using OpenMetaverse;
+using OpenMetaverse.StructuredData;
 using OpenSim.Framework;
 using OpenSim.Framework.Servers.HttpServer;
+using OpenSim.Region.Framework.Interfaces;
 using OpenSim.Region.Framework.Scenes;
 using Caps = OpenSim.Framework.Capabilities.Caps;
 
 namespace OpenSim.Region.ClientStack.Linden
 {
     /// <summary>
-    /// Optional, per-agent capability for desktop avatar interaction preferences
-    /// and server-side eligibility checks. Legacy viewers do not request this cap.
+    /// Optional per-agent capability for avatar interaction preferences,
+    /// invitations and consent. Legacy viewers do not request this capability.
     /// </summary>
     [Extension(Path = "/OpenSim/RegionModules", NodeName = "RegionModule", Id = "AvatarInteractionModule")]
     public class AvatarInteractionModule : INonSharedRegionModule
     {
+        private const int InvitationLifetimeSeconds = 30;
+        private const int MaxPendingInvitations = 128;
+
+        private sealed class InteractionInvitation
+        {
+            public UUID Id;
+            public UUID Requester;
+            public UUID Target;
+            public string Kind;
+            public DateTime ExpiresUtc;
+        }
+
+        private readonly object m_invitationLock = new object();
+        private readonly Dictionary<UUID, InteractionInvitation> m_invitations =
+            new Dictionary<UUID, InteractionInvitation>();
         private Scene m_scene;
 
         public string Name => "AvatarInteractionModule";
@@ -61,7 +78,11 @@ namespace OpenSim.Region.ClientStack.Linden
         {
             scene.EventManager.OnRegisterCaps -= RegisterCaps;
             if (m_scene == scene)
+            {
+                lock (m_invitationLock)
+                    m_invitations.Clear();
                 m_scene = null;
+            }
         }
 
         public void RegionLoaded(Scene scene)
@@ -101,13 +122,13 @@ namespace OpenSim.Region.ClientStack.Linden
                 input = OSDParser.DeserializeLLSDXml(request.InputStream) as OSDMap;
                 if (input == null)
                 {
-                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    WriteReply(response, HttpStatusCode.BadRequest, "invalid_request");
                     return;
                 }
             }
             catch
             {
-                response.StatusCode = (int)HttpStatusCode.BadRequest;
+                WriteReply(response, HttpStatusCode.BadRequest, "invalid_llsd");
                 return;
             }
 
@@ -150,23 +171,23 @@ namespace OpenSim.Region.ClientStack.Linden
             }
             else if (action == "check")
             {
-                string targetText = input.ContainsKey("target") ? input["target"].AsString() : string.Empty;
-                if (!UUID.TryParse(targetText, out UUID targetID) || targetID == agentID)
-                {
-                    WriteReply(response, HttpStatusCode.BadRequest, "invalid_target");
+                if (!TryGetTarget(scene, input, agentID, out ScenePresence target, response))
                     return;
-                }
-
-                if (!scene.TryGetScenePresence(targetID, out ScenePresence target) || target == null)
-                {
-                    WriteReply(response, HttpStatusCode.NotFound, "target_not_present");
-                    return;
-                }
 
                 bool eligible = target.CanReceiveAvatarInteractionFrom(self);
                 output["ok"] = OSD.FromBoolean(true);
                 output["eligible"] = OSD.FromBoolean(eligible);
                 output["status"] = OSD.FromString(eligible ? "eligible" : "not_permitted_or_out_of_range");
+            }
+            else if (action == "invite")
+            {
+                HandleInvite(scene, self, input, response);
+                return;
+            }
+            else if (action == "accept" || action == "reject" || action == "cancel")
+            {
+                HandleInvitationDecision(scene, self, input, action, response);
+                return;
             }
             else
             {
@@ -174,8 +195,213 @@ namespace OpenSim.Region.ClientStack.Linden
                 return;
             }
 
-            response.RawBuffer = OSDParser.SerializeLLSDXmlBytes(output);
-            response.StatusCode = (int)HttpStatusCode.OK;
+            WriteReply(response, HttpStatusCode.OK, output);
+        }
+
+        private static bool TryGetTarget(Scene scene, OSDMap input, UUID agentID,
+            out ScenePresence target, IOSHttpResponse response)
+        {
+            target = null;
+            string targetText = input.ContainsKey("target") ? input["target"].AsString() : string.Empty;
+            if (!UUID.TryParse(targetText, out UUID targetID) || targetID == agentID)
+            {
+                WriteReply(response, HttpStatusCode.BadRequest, "invalid_target");
+                return false;
+            }
+
+            if (!scene.TryGetScenePresence(targetID, out target) || target == null)
+            {
+                WriteReply(response, HttpStatusCode.NotFound, "target_not_present");
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void HandleInvite(Scene scene, ScenePresence requester,
+            OSDMap input, IOSHttpResponse response)
+        {
+            if (!TryGetTarget(scene, input, requester.UUID, out ScenePresence target, response))
+                return;
+
+            string kind = input.ContainsKey("interaction") ? input["interaction"].AsString() : string.Empty;
+            if (kind != "handshake" && kind != "high_five" && kind != "shoulder_tap")
+            {
+                WriteReply(response, HttpStatusCode.BadRequest, "unsupported_interaction");
+                return;
+            }
+
+            if (!target.CanReceiveAvatarInteractionFrom(requester))
+            {
+                WriteReply(response, HttpStatusCode.Forbidden, "not_permitted_or_out_of_range");
+                return;
+            }
+
+            AvatarInteractionModule module = scene.RequestModuleInterface<AvatarInteractionModule>();
+            if (module == null)
+            {
+                WriteReply(response, HttpStatusCode.ServiceUnavailable, "interaction_module_unavailable");
+                return;
+            }
+
+            InteractionInvitation invitation = new InteractionInvitation
+            {
+                Id = UUID.Random(),
+                Requester = requester.UUID,
+                Target = target.UUID,
+                Kind = kind,
+                ExpiresUtc = DateTime.UtcNow.AddSeconds(InvitationLifetimeSeconds)
+            };
+
+            lock (module.m_invitationLock)
+            {
+                module.PruneExpiredInvitations();
+                if (module.m_invitations.Count >= MaxPendingInvitations)
+                {
+                    WriteReply(response, HttpStatusCode.ServiceUnavailable, "invitation_capacity_reached");
+                    return;
+                }
+
+                foreach (InteractionInvitation pending in module.m_invitations.Values)
+                {
+                    if (pending.Target == target.UUID)
+                    {
+                        WriteReply(response, HttpStatusCode.Conflict, "target_has_pending_invitation");
+                        return;
+                    }
+                }
+
+                module.m_invitations[invitation.Id] = invitation;
+            }
+
+            OSDMap body = new OSDMap();
+            body["request_id"] = OSD.FromUUID(invitation.Id);
+            body["requester"] = OSD.FromUUID(requester.UUID);
+            body["requester_name"] = OSD.FromString(requester.Name);
+            body["interaction"] = OSD.FromString(kind);
+            body["expires_in"] = OSD.FromInteger(InvitationLifetimeSeconds);
+
+            if (!module.EnqueueInteractionEvent(target.UUID, "AvatarInteractionInvite", body))
+            {
+                lock (module.m_invitationLock)
+                    module.m_invitations.Remove(invitation.Id);
+                WriteReply(response, HttpStatusCode.ServiceUnavailable, "target_event_queue_unavailable");
+                return;
+            }
+
+            OSDMap output = new OSDMap();
+            output["ok"] = OSD.FromBoolean(true);
+            output["request_id"] = OSD.FromUUID(invitation.Id);
+            output["status"] = OSD.FromString("invitation_sent");
+            WriteReply(response, HttpStatusCode.OK, output);
+        }
+
+        private static void HandleInvitationDecision(Scene scene, ScenePresence actor,
+            OSDMap input, string action, IOSHttpResponse response)
+        {
+            string requestText = input.ContainsKey("request_id") ? input["request_id"].AsString() : string.Empty;
+            if (!UUID.TryParse(requestText, out UUID requestID))
+            {
+                WriteReply(response, HttpStatusCode.BadRequest, "invalid_request_id");
+                return;
+            }
+
+            AvatarInteractionModule module = scene.RequestModuleInterface<AvatarInteractionModule>();
+            if (module == null)
+            {
+                WriteReply(response, HttpStatusCode.ServiceUnavailable, "interaction_module_unavailable");
+                return;
+            }
+
+            InteractionInvitation invitation;
+            lock (module.m_invitationLock)
+            {
+                module.PruneExpiredInvitations();
+                if (!module.m_invitations.TryGetValue(requestID, out invitation))
+                {
+                    WriteReply(response, HttpStatusCode.NotFound, "invitation_expired_or_unknown");
+                    return;
+                }
+
+                bool actorIsTarget = actor.UUID == invitation.Target;
+                bool actorIsRequester = actor.UUID == invitation.Requester;
+                if ((action == "accept" || action == "reject") && !actorIsTarget ||
+                    action == "cancel" && !actorIsRequester)
+                {
+                    WriteReply(response, HttpStatusCode.Forbidden, "not_invitation_participant");
+                    return;
+                }
+
+                module.m_invitations.Remove(requestID);
+            }
+
+            if (action == "accept")
+            {
+                if (!scene.TryGetScenePresence(invitation.Requester, out ScenePresence requester) ||
+                    requester == null || !actor.CanReceiveAvatarInteractionFrom(requester))
+                {
+                    module.EnqueueInteractionEvent(invitation.Requester, "AvatarInteractionEnded",
+                        BuildRequestBody(invitation, "expired", "requester_unavailable_or_out_of_range"));
+                    WriteReply(response, HttpStatusCode.Conflict, "requester_unavailable_or_out_of_range");
+                    return;
+                }
+
+                OSDMap accepted = BuildRequestBody(invitation, "accepted", string.Empty);
+                module.EnqueueInteractionEvent(invitation.Requester, "AvatarInteractionAccepted", accepted);
+                module.EnqueueInteractionEvent(invitation.Target, "AvatarInteractionAccepted", accepted);
+            }
+            else
+            {
+                string status = action == "reject" ? "rejected" : "cancelled";
+                UUID notify = action == "reject" ? invitation.Requester : invitation.Target;
+                module.EnqueueInteractionEvent(notify, "AvatarInteractionEnded",
+                    BuildRequestBody(invitation, status, string.Empty));
+            }
+
+            OSDMap output = new OSDMap();
+            output["ok"] = OSD.FromBoolean(true);
+            output["status"] = OSD.FromString(action == "accept" ? "accepted" :
+                action == "reject" ? "rejected" : "cancelled");
+            WriteReply(response, HttpStatusCode.OK, output);
+        }
+
+        private static OSDMap BuildRequestBody(InteractionInvitation invitation,
+            string status, string reason)
+        {
+            OSDMap body = new OSDMap();
+            body["request_id"] = OSD.FromUUID(invitation.Id);
+            body["requester"] = OSD.FromUUID(invitation.Requester);
+            body["target"] = OSD.FromUUID(invitation.Target);
+            body["interaction"] = OSD.FromString(invitation.Kind);
+            body["status"] = OSD.FromString(status);
+            body["reason"] = OSD.FromString(reason);
+            return body;
+        }
+
+        private bool EnqueueInteractionEvent(UUID agentID, string eventName, OSDMap body)
+        {
+            IEventQueue eventQueue = m_scene?.RequestModuleInterface<IEventQueue>();
+            if (eventQueue == null)
+                return false;
+
+            OSDMap message = new OSDMap();
+            message["message"] = OSD.FromString(eventName);
+            message["body"] = body;
+            return eventQueue.Enqueue(message, agentID);
+        }
+
+        private void PruneExpiredInvitations()
+        {
+            DateTime now = DateTime.UtcNow;
+            List<UUID> expired = new List<UUID>();
+            foreach (KeyValuePair<UUID, InteractionInvitation> pair in m_invitations)
+            {
+                if (pair.Value.ExpiresUtc <= now)
+                    expired.Add(pair.Key);
+            }
+
+            foreach (UUID id in expired)
+                m_invitations.Remove(id);
         }
 
         private static void WriteReply(IOSHttpResponse response, HttpStatusCode status, string reason)
@@ -183,6 +409,11 @@ namespace OpenSim.Region.ClientStack.Linden
             OSDMap output = new OSDMap();
             output["ok"] = OSD.FromBoolean(false);
             output["status"] = OSD.FromString(reason);
+            WriteReply(response, status, output);
+        }
+
+        private static void WriteReply(IOSHttpResponse response, HttpStatusCode status, OSDMap output)
+        {
             response.RawBuffer = OSDParser.SerializeLLSDXmlBytes(output);
             response.ContentType = "application/llsd+xml";
             response.StatusCode = (int)status;
