@@ -104,10 +104,21 @@ namespace OpenSim.Region.ClientStack.Linden
             scene.EventManager.OnRegisterCaps -= RegisterCaps;
             scene.EventManager.OnMakeChildAgent -= HandleMakeChildAgent;
             scene.EventManager.OnRemovePresence -= HandleRemovePresence;
-            m_sessionExpiryTimer?.Dispose();
-            m_sessionExpiryTimer = null;
             if (m_scene == scene)
             {
+                // Dispose(waitHandle) prevents a queued expiry callback from
+                // continuing to use the scene while region teardown clears state.
+                Timer expiryTimer = m_sessionExpiryTimer;
+                m_sessionExpiryTimer = null;
+                if (expiryTimer != null)
+                {
+                    using (ManualResetEvent timerStopped = new ManualResetEvent(false))
+                    {
+                        if (expiryTimer.Dispose(timerStopped))
+                            timerStopped.WaitOne();
+                    }
+                }
+
                 lock (m_invitationLock)
                 {
                     m_invitations.Clear();
