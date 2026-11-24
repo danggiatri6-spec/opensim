@@ -368,7 +368,11 @@ namespace OpenSim.Region.ClientStack.Linden
                     return;
                 }
 
-                module.m_invitations.Remove(requestID);
+                // A rejection or cancellation consumes the invitation immediately.
+                // Acceptance is committed only after presence, range and session-capacity
+                // checks succeed, so a transient conflict does not destroy a valid invite.
+                if (action != "accept")
+                    module.m_invitations.Remove(requestID);
             }
 
             UUID sessionID = UUID.Zero;
@@ -377,6 +381,9 @@ namespace OpenSim.Region.ClientStack.Linden
                 if (!scene.TryGetScenePresence(invitation.Requester, out ScenePresence requester) ||
                     requester == null || !actor.CanReceiveAvatarInteractionFrom(requester))
                 {
+                    lock (module.m_invitationLock)
+                        module.m_invitations.Remove(requestID);
+
                     module.EnqueueInteractionEvent(invitation.Requester, "AvatarInteractionEnded",
                         BuildRequestBody(invitation, "expired", "requester_unavailable_or_out_of_range"));
                     WriteReply(response, HttpStatusCode.Conflict, "requester_unavailable_or_out_of_range");
@@ -395,6 +402,14 @@ namespace OpenSim.Region.ClientStack.Linden
 
                 lock (module.m_invitationLock)
                 {
+                    // Re-check under the lock: another accept/cancel may have consumed
+                    // this invitation while the presence/range checks were running.
+                    if (!module.m_invitations.ContainsKey(requestID))
+                    {
+                        WriteReply(response, HttpStatusCode.Conflict, "invitation_already_consumed");
+                        return;
+                    }
+
                     module.PruneExpiredSessions(DateTime.UtcNow);
                     if (module.m_sessions.Count >= MaxActiveSessions ||
                         module.HasActiveSession(invitation.Requester) ||
@@ -403,6 +418,8 @@ namespace OpenSim.Region.ClientStack.Linden
                         WriteReply(response, HttpStatusCode.Conflict, "participant_already_in_interaction");
                         return;
                     }
+
+                    module.m_invitations.Remove(requestID);
                     module.m_sessions[session.Id] = session;
                 }
 
