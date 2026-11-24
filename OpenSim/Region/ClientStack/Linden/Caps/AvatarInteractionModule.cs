@@ -512,7 +512,13 @@ namespace OpenSim.Region.ClientStack.Linden
             }
 
             foreach (UUID id in expired)
+            {
+                InteractionSession session = m_sessions[id];
                 m_sessions.Remove(id);
+                OSDMap ended = BuildSessionBody(session, "expired", "session_timeout");
+                EnqueueInteractionEvent(session.Requester, "AvatarInteractionEnded", ended);
+                EnqueueInteractionEvent(session.Target, "AvatarInteractionEnded", ended);
+            }
         }
 
         private static OSDMap BuildRequestBody(InteractionInvitation invitation,
