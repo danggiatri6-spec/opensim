@@ -64,4 +64,4 @@ Client-side collision/contact reports are hints only and never sufficient proof 
 
 ## Status
 
-This document defines the implementation contract only. It does not claim that the capability or runtime interaction system has been implemented.
+Initial server code adds a per-presence interaction policy (default Off) and a conservative same-scene/root-presence/3-metre consent gate. It is not yet exposed through a capability, persisted as a user preference, or wired to interaction requests. The server contract and runtime request path remain incomplete.
