@@ -28,6 +28,7 @@
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Threading;
 using Mono.Addins;
 using Nini.Config;
 using OpenMetaverse;
@@ -82,6 +83,7 @@ namespace OpenSim.Region.ClientStack.Linden
         private readonly Dictionary<UUID, InteractionSession> m_sessions =
             new Dictionary<UUID, InteractionSession>();
         private Scene m_scene;
+        private Timer m_sessionExpiryTimer;
 
         public string Name => "AvatarInteractionModule";
         public Type ReplaceableInterface => null;
@@ -94,6 +96,7 @@ namespace OpenSim.Region.ClientStack.Linden
             scene.RegisterModuleInterface<AvatarInteractionModule>(this);
             scene.EventManager.OnMakeChildAgent += HandleMakeChildAgent;
             scene.EventManager.OnRemovePresence += HandleRemovePresence;
+            m_sessionExpiryTimer = new Timer(PruneExpiredSessionsTimer, null, 1000, 1000);
         }
 
         public void RemoveRegion(Scene scene)
@@ -101,6 +104,8 @@ namespace OpenSim.Region.ClientStack.Linden
             scene.EventManager.OnRegisterCaps -= RegisterCaps;
             scene.EventManager.OnMakeChildAgent -= HandleMakeChildAgent;
             scene.EventManager.OnRemovePresence -= HandleRemovePresence;
+            m_sessionExpiryTimer?.Dispose();
+            m_sessionExpiryTimer = null;
             if (m_scene == scene)
             {
                 lock (m_invitationLock)
@@ -121,6 +126,37 @@ namespace OpenSim.Region.ClientStack.Linden
 
         public void PostInitialise() { }
         public void Close() { }
+
+        private void PruneExpiredSessionsTimer(object state)
+        {
+            List<InteractionSession> expiredSessions = new List<InteractionSession>();
+            DateTime now = DateTime.UtcNow;
+
+            lock (m_invitationLock)
+            {
+                List<UUID> expiredIDs = new List<UUID>();
+                foreach (KeyValuePair<UUID, InteractionSession> pair in m_sessions)
+                {
+                    if (pair.Value.ExpiresUtc <= now)
+                    {
+                        expiredIDs.Add(pair.Key);
+                        expiredSessions.Add(pair.Value);
+                    }
+                }
+
+                foreach (UUID id in expiredIDs)
+                    m_sessions.Remove(id);
+            }
+
+            // Notify both participants outside the lock. This timer makes expiry
+            // independent of subsequent user actions in the region.
+            foreach (InteractionSession session in expiredSessions)
+            {
+                OSDMap ended = BuildSessionBody(session, "expired", "session_timeout");
+                EnqueueInteractionEvent(session.Requester, "AvatarInteractionEnded", ended);
+                EnqueueInteractionEvent(session.Target, "AvatarInteractionEnded", ended);
+            }
+        }
 
         private void HandleMakeChildAgent(ScenePresence presence)
         {
