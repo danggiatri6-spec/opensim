@@ -62,15 +62,16 @@ Client-side collision/contact reports are hints only and never sufficient proof 
 - No transmission of camera or microphone media.
 - No changes to legacy LSL animation APIs or existing animation pack semantics.
 
-## Status
+## Current implementation status
 
-Initial server code adds a per-presence interaction policy (default Off) and a conservative same-scene/root-presence/3-metre consent gate. It is not yet exposed through a capability, persisted as a user preference, or wired to interaction requests. The server contract and runtime request path remain incomplete.
+The server now has a region-scoped optional `AvatarInteraction` capability and an in-memory invitation flow:
 
+- `set_policy`: sets Off, Friends, Ask, or Everyone for the current presence lifetime.
+- `check`: checks target presence, target policy, and the 3-metre distance gate.
+- `invite`: supports the bounded identifiers `handshake`, `high_five`, and `shoulder_tap`; sends an `AvatarInteractionInvite` event through the existing `IEventQueue`.
+- `accept`: validates that the caller is the invite target, rechecks policy/presence/distance, and relays `AvatarInteractionAccepted` to both participants.
+- `reject` and `cancel`: validate the appropriate participant and relay an `AvatarInteractionEnded` status to the other participant.
 
-## Capability implementation increment
+Friends policy uses the region's `IFriendsModule.IsFriend` relationship check. Ask means the target receives an invitation and must explicitly accept it. Invitations expire after 30 seconds, only one pending invitation is allowed per target, and the module caps outstanding invitations at 128.
 
-A per-region `AvatarInteractionModule` now registers the optional `AvatarInteraction` capability for each agent. Its LLSD POST endpoint currently supports:
-- `set_policy`: sets the current root presence policy to Off, Friends, Ask, or Everyone for that presence lifetime.
-- `check`: checks whether a target is present and whether the target's current policy and distance allow the requester.
-
-The Viewer currently sends only Off / Everyone through its desktop toggle. Policy persistence, Friends relationship checks, Ask/accept notification delivery, paired action start/cancel events, expiry/replay protection, and lifecycle cleanup remain to be implemented. The endpoint does not yet start or relay an interaction animation. Legacy clients do not request this capability and continue to use existing animation behavior.
+Important limits: invitations and policies are memory-only; expiry cleanup is lazy (on the next interaction request); there is no per-agent rate limiter, persistence, automatic cleanup on agent departure, or paired animation start/stop yet. The Viewer has not yet been wired to send `invite/accept/reject/cancel` requests or display incoming invitations. The server source has not been compiled or runtime-tested. Legacy clients continue to ignore this optional capability and use existing animation behavior.
