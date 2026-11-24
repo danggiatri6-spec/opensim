@@ -78,6 +78,19 @@ namespace OpenSim.Region.Framework.Scenes
         MuteCollisions = 0x80
     }
 
+    /// <summary>
+    /// Controls whether another avatar may initiate a paired social interaction.
+    /// The default is deliberately Off; a negotiated client capability will
+    /// expose user-configurable policy in a later implementation step.
+    /// </summary>
+    public enum AvatarInteractionPolicy
+    {
+        Off = 0,
+        Friends = 1,
+        Ask = 2,
+        Everyone = 3
+    }
+
     public delegate void SendCoarseLocationsMethod(UUID scene, ScenePresence presence, List<Vector3> coarseLocations, List<UUID> avatarUUIDs);
 
     public class ScenePresence : EntityBase, IScenePresence, IDisposable
@@ -144,6 +157,11 @@ namespace OpenSim.Region.Framework.Scenes
 
         public bool HideTitle;
         public bool MuteCollisions;
+        /// <summary>
+        /// Server-side consent policy for optional paired avatar interactions.
+        /// New presences default to Off until a trusted preference endpoint is added.
+        /// </summary>
+        public AvatarInteractionPolicy InteractionPolicy { get; set; } = AvatarInteractionPolicy.Off;
 
         private readonly ScenePresenceStateMachine m_stateMachine;
 
@@ -4290,6 +4308,32 @@ namespace OpenSim.Region.Framework.Scenes
         public void SendAppearanceToAgentNF(ScenePresence avatar)
         {
             avatar.ControllingClient.SendAppearance(UUID, Appearance.VisualParams, Appearance.Texture.GetBakesBytes(), Appearance.AvatarPreferencesHoverZ);
+        }
+
+        /// <summary>
+        /// Performs the simulator-side baseline checks for a paired avatar interaction.
+        /// This is intentionally not wired to client requests until the optional
+        /// capability and consent UI are implemented. Client-reported contacts are
+        /// never authoritative.
+        /// </summary>
+        public bool CanReceiveAvatarInteractionFrom(ScenePresence requester)
+        {
+            if (requester == null || requester == this)
+                return false;
+
+            if (m_scene == null || requester.m_scene != m_scene)
+                return false;
+
+            if (IsChildAgent || requester.IsChildAgent || IsInTransit || requester.IsInTransit)
+                return false;
+
+            if (InteractionPolicy != AvatarInteractionPolicy.Everyone)
+                return false;
+
+            // Keep the first interaction radius deliberately small (3 metres).
+            // A future region setting may lower this value, but clients cannot raise it.
+            const float maxDistanceSquared = 9.0f;
+            return (requester.AbsolutePosition - AbsolutePosition).LengthSquared() <= maxDistanceSquared;
         }
 
         public void SendAnimPackToAgent(ScenePresence p)
