@@ -4324,7 +4324,9 @@ namespace OpenSim.Region.Framework.Scenes
             if (m_scene == null || requester.m_scene != m_scene)
                 return false;
 
-            if (IsChildAgent || requester.IsChildAgent || IsInTransit || requester.IsInTransit)
+            if (IsChildAgent || requester.IsChildAgent ||
+                LifecycleState != ScenePresenceState.Running ||
+                requester.LifecycleState != ScenePresenceState.Running)
                 return false;
 
             if (InteractionPolicy != AvatarInteractionPolicy.Everyone)
