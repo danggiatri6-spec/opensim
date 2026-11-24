@@ -65,3 +65,12 @@ Client-side collision/contact reports are hints only and never sufficient proof 
 ## Status
 
 Initial server code adds a per-presence interaction policy (default Off) and a conservative same-scene/root-presence/3-metre consent gate. It is not yet exposed through a capability, persisted as a user preference, or wired to interaction requests. The server contract and runtime request path remain incomplete.
+
+
+## Capability implementation increment
+
+A per-region `AvatarInteractionModule` now registers the optional `AvatarInteraction` capability for each agent. Its LLSD POST endpoint currently supports:
+- `set_policy`: sets the current root presence policy to Off, Friends, Ask, or Everyone for that presence lifetime.
+- `check`: checks whether a target is present and whether the target's current policy and distance allow the requester.
+
+The Viewer currently sends only Off / Everyone through its desktop toggle. Policy persistence, Friends relationship checks, Ask/accept notification delivery, paired action start/cancel events, expiry/replay protection, and lifecycle cleanup remain to be implemented. The endpoint does not yet start or relay an interaction animation. Legacy clients do not request this capability and continue to use existing animation behavior.
