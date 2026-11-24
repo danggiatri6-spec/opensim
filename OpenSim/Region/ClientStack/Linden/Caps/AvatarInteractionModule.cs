@@ -72,6 +72,7 @@ namespace OpenSim.Region.ClientStack.Linden
         public void AddRegion(Scene scene)
         {
             m_scene = scene;
+            scene.RegisterModuleInterface<AvatarInteractionModule>(this);
         }
 
         public void RemoveRegion(Scene scene)
@@ -81,6 +82,7 @@ namespace OpenSim.Region.ClientStack.Linden
             {
                 lock (m_invitationLock)
                     m_invitations.Clear();
+                scene.UnregisterModuleInterface<AvatarInteractionModule>(this);
                 m_scene = null;
             }
         }
