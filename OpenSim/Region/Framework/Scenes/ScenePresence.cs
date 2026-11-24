@@ -4311,10 +4311,10 @@ namespace OpenSim.Region.Framework.Scenes
         }
 
         /// <summary>
-        /// Performs the simulator-side baseline checks for a paired avatar interaction.
-        /// This is intentionally not wired to client requests until the optional
-        /// capability and consent UI are implemented. Client-reported contacts are
-        /// never authoritative.
+        /// Performs simulator-side policy, presence and distance checks before an
+        /// avatar interaction invitation is delivered. Ask permits an invitation,
+        /// not the interaction itself; the target must still explicitly accept.
+        /// Client-reported contacts are never authoritative.
         /// </summary>
         public bool CanReceiveAvatarInteractionFrom(ScenePresence requester)
         {
@@ -4329,7 +4329,24 @@ namespace OpenSim.Region.Framework.Scenes
                 requester.LifecycleState != ScenePresenceState.Running)
                 return false;
 
-            if (InteractionPolicy != AvatarInteractionPolicy.Everyone)
+            bool policyAllows = false;
+            switch (InteractionPolicy)
+            {
+                case AvatarInteractionPolicy.Friends:
+                    IFriendsModule friends = m_scene.RequestModuleInterface<IFriendsModule>();
+                    policyAllows = friends != null && friends.IsFriend(UUID, requester.UUID);
+                    break;
+                case AvatarInteractionPolicy.Ask:
+                case AvatarInteractionPolicy.Everyone:
+                    policyAllows = true;
+                    break;
+                case AvatarInteractionPolicy.Off:
+                default:
+                    policyAllows = false;
+                    break;
+            }
+
+            if (!policyAllows)
                 return false;
 
             // Keep the first interaction radius deliberately small (3 metres).
