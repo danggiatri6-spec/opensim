@@ -624,8 +624,8 @@ namespace OpenSim.Region.ClientStack.Linden
             return false;
         }
 
-        // Called only while m_invitationLock is held. Expiry is lazy: expired
-        // sessions are pruned when the next participant action reaches this region.
+        // Called only while m_invitationLock is held. The periodic timer normally
+        // expires sessions proactively; request paths also prune as a race-safe fallback.
         private void PruneExpiredSessions(DateTime now)
         {
             List<UUID> expired = new List<UUID>();
