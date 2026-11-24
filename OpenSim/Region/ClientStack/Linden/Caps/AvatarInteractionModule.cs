@@ -52,10 +52,22 @@ namespace OpenSim.Region.ClientStack.Linden
         private const int MaxInvitesPerWindow = 5;
         private const int InviteRateWindowSeconds = 10;
         private const int MaxTrackedInviteSenders = 1024;
+        private const int InteractionSessionLifetimeSeconds = 120;
+        private const int MaxActiveSessions = 128;
 
         private sealed class InteractionInvitation
         {
             public UUID Id;
+            public UUID Requester;
+            public UUID Target;
+            public string Kind;
+            public DateTime ExpiresUtc;
+        }
+
+        private sealed class InteractionSession
+        {
+            public UUID Id;
+            public UUID RequestId;
             public UUID Requester;
             public UUID Target;
             public string Kind;
@@ -67,6 +79,8 @@ namespace OpenSim.Region.ClientStack.Linden
             new Dictionary<UUID, InteractionInvitation>();
         private readonly Dictionary<UUID, Queue<DateTime>> m_inviteAttempts =
             new Dictionary<UUID, Queue<DateTime>>();
+        private readonly Dictionary<UUID, InteractionSession> m_sessions =
+            new Dictionary<UUID, InteractionSession>();
         private Scene m_scene;
 
         public string Name => "AvatarInteractionModule";
@@ -89,6 +103,7 @@ namespace OpenSim.Region.ClientStack.Linden
                 {
                     m_invitations.Clear();
                     m_inviteAttempts.Clear();
+                    m_sessions.Clear();
                 }
                 scene.UnregisterModuleInterface<AvatarInteractionModule>(this);
                 m_scene = null;
@@ -197,6 +212,11 @@ namespace OpenSim.Region.ClientStack.Linden
             else if (action == "accept" || action == "reject" || action == "cancel")
             {
                 HandleInvitationDecision(scene, self, input, action, response);
+                return;
+            }
+            else if (action == "end")
+            {
+                HandleSessionEnd(scene, self, input, response);
                 return;
             }
             else
@@ -351,6 +371,7 @@ namespace OpenSim.Region.ClientStack.Linden
                 module.m_invitations.Remove(requestID);
             }
 
+            UUID sessionID = UUID.Zero;
             if (action == "accept")
             {
                 if (!scene.TryGetScenePresence(invitation.Requester, out ScenePresence requester) ||
@@ -362,7 +383,30 @@ namespace OpenSim.Region.ClientStack.Linden
                     return;
                 }
 
-                OSDMap accepted = BuildRequestBody(invitation, "accepted", string.Empty);
+                InteractionSession session = new InteractionSession
+                {
+                    Id = UUID.Random(),
+                    RequestId = invitation.Id,
+                    Requester = invitation.Requester,
+                    Target = invitation.Target,
+                    Kind = invitation.Kind,
+                    ExpiresUtc = DateTime.UtcNow.AddSeconds(InteractionSessionLifetimeSeconds)
+                };
+
+                lock (module.m_invitationLock)
+                {
+                    if (module.m_sessions.Count >= MaxActiveSessions ||
+                        module.HasActiveSession(invitation.Requester) ||
+                        module.HasActiveSession(invitation.Target))
+                    {
+                        WriteReply(response, HttpStatusCode.Conflict, "participant_already_in_interaction");
+                        return;
+                    }
+                    module.m_sessions[session.Id] = session;
+                }
+
+                sessionID = session.Id;
+                OSDMap accepted = BuildSessionBody(session, "accepted", string.Empty);
                 module.EnqueueInteractionEvent(invitation.Requester, "AvatarInteractionAccepted", accepted);
                 module.EnqueueInteractionEvent(invitation.Target, "AvatarInteractionAccepted", accepted);
             }
@@ -378,7 +422,95 @@ namespace OpenSim.Region.ClientStack.Linden
             output["ok"] = OSD.FromBoolean(true);
             output["status"] = OSD.FromString(action == "accept" ? "accepted" :
                 action == "reject" ? "rejected" : "cancelled");
+            if (action == "accept")
+                output["session_id"] = OSD.FromUUID(sessionID);
             WriteReply(response, HttpStatusCode.OK, output);
+        }
+
+        private static void HandleSessionEnd(Scene scene, ScenePresence actor,
+            OSDMap input, IOSHttpResponse response)
+        {
+            string sessionText = input.ContainsKey("session_id") ? input["session_id"].AsString() : string.Empty;
+            if (!UUID.TryParse(sessionText, out UUID sessionID))
+            {
+                WriteReply(response, HttpStatusCode.BadRequest, "invalid_session_id");
+                return;
+            }
+
+            AvatarInteractionModule module = scene.RequestModuleInterface<AvatarInteractionModule>();
+            if (module == null)
+            {
+                WriteReply(response, HttpStatusCode.ServiceUnavailable, "interaction_module_unavailable");
+                return;
+            }
+
+            InteractionSession session;
+            lock (module.m_invitationLock)
+            {
+                if (!module.m_sessions.TryGetValue(sessionID, out session))
+                {
+                    WriteReply(response, HttpStatusCode.NotFound, "session_not_found_or_expired");
+                    return;
+                }
+
+                if (actor.UUID != session.Requester && actor.UUID != session.Target)
+                {
+                    WriteReply(response, HttpStatusCode.Forbidden, "not_interaction_participant");
+                    return;
+                }
+
+                module.m_sessions.Remove(sessionID);
+            }
+
+            OSDMap ended = BuildSessionBody(session, "ended", "participant_requested_end");
+            module.EnqueueInteractionEvent(session.Requester, "AvatarInteractionEnded", ended);
+            module.EnqueueInteractionEvent(session.Target, "AvatarInteractionEnded", ended);
+
+            OSDMap output = new OSDMap();
+            output["ok"] = OSD.FromBoolean(true);
+            output["status"] = OSD.FromString("ended");
+            output["session_id"] = OSD.FromUUID(sessionID);
+            WriteReply(response, HttpStatusCode.OK, output);
+        }
+
+        private static OSDMap BuildSessionBody(InteractionSession session,
+            string status, string reason)
+        {
+            OSDMap body = new OSDMap();
+            body["request_id"] = OSD.FromUUID(session.RequestId);
+            body["session_id"] = OSD.FromUUID(session.Id);
+            body["requester"] = OSD.FromUUID(session.Requester);
+            body["target"] = OSD.FromUUID(session.Target);
+            body["interaction"] = OSD.FromString(session.Kind);
+            body["status"] = OSD.FromString(status);
+            body["reason"] = OSD.FromString(reason);
+            body["expires_in"] = OSD.FromInteger(InteractionSessionLifetimeSeconds);
+            return body;
+        }
+
+        private bool HasActiveSession(UUID participantID)
+        {
+            foreach (InteractionSession session in m_sessions.Values)
+            {
+                if (session.Requester == participantID || session.Target == participantID)
+                    return true;
+            }
+            return false;
+        }
+
+        // Called only while m_invitationLock is held. Expiry is lazy: expired
+        // sessions are pruned when the next participant action reaches this region.
+        private void PruneExpiredSessions(DateTime now)
+        {
+            List<UUID> expired = new List<UUID>();
+            foreach (KeyValuePair<UUID, InteractionSession> pair in m_sessions)
+            {
+                if (pair.Value.ExpiresUtc <= now)
+                    expired.Add(pair.Key);
+            }
+
+            foreach (UUID id in expired)
+                m_sessions.Remove(id);
         }
 
         private static OSDMap BuildRequestBody(InteractionInvitation invitation,
