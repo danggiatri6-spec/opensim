@@ -622,6 +622,18 @@ namespace OpenSim.Region.ClientStack.Linden
             body["status"] = OSD.FromString(status);
             body["reason"] = OSD.FromString(reason);
             body["expires_in"] = OSD.FromInteger(InteractionSessionLifetimeSeconds);
+
+            // OpenSim's bundled handshake asset is a single-avatar right-hand
+            // double-pump motion. Both participants play it simultaneously;
+            // participants should face one another before accepting. Do not
+            // advertise it for high-five or shoulder-tap without paired assets.
+            if (status == "accepted" && session.Kind == "handshake")
+            {
+                UUID handshakeAnimation = new UUID("ddc2400f-ecdb-b00e-aee7-442ff99d5fb7");
+                body["requester_animation"] = OSD.FromUUID(handshakeAnimation);
+                body["target_animation"] = OSD.FromUUID(handshakeAnimation);
+            }
+
             return body;
         }
 
