@@ -373,7 +373,8 @@ namespace OpenSim.Region.ClientStack.Linden
                 return;
 
             string kind = input.ContainsKey("interaction") ? input["interaction"].AsString() : string.Empty;
-            if (kind != "handshake" && kind != "high_five" && kind != "shoulder_tap")
+            if (kind != "handshake" && kind != "high_five" && kind != "shoulder_tap" &&
+                kind != "hug" && kind != "kiss" && kind != "holding_hands" && kind != "affection")
             {
                 WriteReply(response, HttpStatusCode.BadRequest, "unsupported_interaction");
                 return;
