@@ -49,6 +49,9 @@ namespace OpenSim.Region.ClientStack.Linden
     {
         private const int InvitationLifetimeSeconds = 30;
         private const int MaxPendingInvitations = 128;
+        private const int MaxInvitesPerWindow = 5;
+        private const int InviteRateWindowSeconds = 10;
+        private const int MaxTrackedInviteSenders = 1024;
 
         private sealed class InteractionInvitation
         {
@@ -62,6 +65,8 @@ namespace OpenSim.Region.ClientStack.Linden
         private readonly object m_invitationLock = new object();
         private readonly Dictionary<UUID, InteractionInvitation> m_invitations =
             new Dictionary<UUID, InteractionInvitation>();
+        private readonly Dictionary<UUID, Queue<DateTime>> m_inviteAttempts =
+            new Dictionary<UUID, Queue<DateTime>>();
         private Scene m_scene;
 
         public string Name => "AvatarInteractionModule";
@@ -81,7 +86,10 @@ namespace OpenSim.Region.ClientStack.Linden
             if (m_scene == scene)
             {
                 lock (m_invitationLock)
+                {
                     m_invitations.Clear();
+                    m_inviteAttempts.Clear();
+                }
                 scene.UnregisterModuleInterface<AvatarInteractionModule>(this);
                 m_scene = null;
             }
@@ -258,6 +266,12 @@ namespace OpenSim.Region.ClientStack.Linden
             lock (module.m_invitationLock)
             {
                 module.PruneExpiredInvitations();
+                if (!module.TryConsumeInviteAttempt(requester.UUID, DateTime.UtcNow))
+                {
+                    WriteReply(response, (HttpStatusCode)429, "invite_rate_limited");
+                    return;
+                }
+
                 if (module.m_invitations.Count >= MaxPendingInvitations)
                 {
                     WriteReply(response, HttpStatusCode.ServiceUnavailable, "invitation_capacity_reached");
@@ -390,6 +404,47 @@ namespace OpenSim.Region.ClientStack.Linden
             message["message"] = OSD.FromString(eventName);
             message["body"] = body;
             return eventQueue.Enqueue(message, agentID);
+        }
+
+        // Called only while m_invitationLock is held. Uses a rolling window so
+        // bursts are bounded without penalising users for unrelated interactions.
+        private bool TryConsumeInviteAttempt(UUID requesterID, DateTime now)
+        {
+            DateTime cutoff = now.AddSeconds(-InviteRateWindowSeconds);
+
+            if (!m_inviteAttempts.TryGetValue(requesterID, out Queue<DateTime> attempts))
+            {
+                if (m_inviteAttempts.Count >= MaxTrackedInviteSenders)
+                {
+                    // Remove idle senders before refusing to grow this per-region table.
+                    List<UUID> idleSenders = new List<UUID>();
+                    foreach (KeyValuePair<UUID, Queue<DateTime>> pair in m_inviteAttempts)
+                    {
+                        while (pair.Value.Count > 0 && pair.Value.Peek() <= cutoff)
+                            pair.Value.Dequeue();
+                        if (pair.Value.Count == 0)
+                            idleSenders.Add(pair.Key);
+                    }
+
+                    foreach (UUID idleSender in idleSenders)
+                        m_inviteAttempts.Remove(idleSender);
+
+                    if (m_inviteAttempts.Count >= MaxTrackedInviteSenders)
+                        return false;
+                }
+
+                attempts = new Queue<DateTime>();
+                m_inviteAttempts[requesterID] = attempts;
+            }
+
+            while (attempts.Count > 0 && attempts.Peek() <= cutoff)
+                attempts.Dequeue();
+
+            if (attempts.Count >= MaxInvitesPerWindow)
+                return false;
+
+            attempts.Enqueue(now);
+            return true;
         }
 
         private void PruneExpiredInvitations()
