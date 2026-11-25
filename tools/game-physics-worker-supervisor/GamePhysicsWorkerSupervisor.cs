@@ -28,6 +28,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     private readonly NamedPipeServerStream? _pipeServer;
     private readonly SemaphoreSlim _requestLock = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly CancellationTokenSource _heartbeatStop = new();
     private readonly Task _exitMonitor;
     private Task? _heartbeatTask;
     private long _sequence = 1;
@@ -101,7 +102,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         start.ArgumentList.Add(windows ? "--pipe" : "--socket");
         start.ArgumentList.Add(endpoint);
 
-        Process process;
+        Process? process = null;
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException("Worker process did not start.");
@@ -145,7 +146,8 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         catch
         {
             CryptographicOperations.ZeroMemory(token);
-            try { if (processOrNull(start, out Process? child)) child!.Kill(entireProcessTree: true); } catch { }
+            try { if (process is not null && !process.HasExited) process.Kill(entireProcessTree: true); } catch { }
+            process?.Dispose();
             pipe?.Dispose();
             listener?.Dispose();
             if (privateDirectory is not null && Directory.Exists(privateDirectory))
@@ -153,11 +155,6 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             throw;
         }
 
-        static bool processOrNull(ProcessStartInfo _, out Process? child)
-        {
-            child = null;
-            return false;
-        }
     }
 
     public async Task<JsonElement> EchoAsync(JsonElement payload, CancellationToken cancellationToken = default)
@@ -179,7 +176,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             return;
 
         SetState(WorkerLifecycleState.Stopping);
-        _lifetime.Cancel();
+        _heartbeatStop.Cancel();
         if (_heartbeatTask is not null)
         {
             try { await _heartbeatTask.ConfigureAwait(false); } catch { }
@@ -190,11 +187,13 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             using JsonDocument response = await SendRequestAsync(
                 "Shutdown", JsonSerializer.SerializeToElement(new { }), cancellationToken, allowStopping: true).ConfigureAwait(false);
             await _process.WaitForExitAsync(cancellationToken).WaitAsync(_options.ShutdownTimeout, cancellationToken).ConfigureAwait(false);
+            _lifetime.Cancel();
             SetState(WorkerLifecycleState.Stopped);
         }
         catch
         {
             TryKill();
+            _lifetime.Cancel();
             SetState(WorkerLifecycleState.Faulted);
             throw;
         }
@@ -271,13 +270,14 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         try
         {
             using var timer = new PeriodicTimer(_options.HeartbeatInterval);
-            while (await timer.WaitForNextTickAsync(_lifetime.Token).ConfigureAwait(false))
+            while (await timer.WaitForNextTickAsync(_heartbeatStop.Token).ConfigureAwait(false))
             {
-                using var timeout = new CancellationTokenSource(_options.HeartbeatTimeout);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(_heartbeatStop.Token);
+                timeout.CancelAfter(_options.HeartbeatTimeout);
                 await CheckHealthAsync(timeout.Token).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (_heartbeatStop.IsCancellationRequested) { }
         catch
         {
             SetState(WorkerLifecycleState.Faulted);
@@ -323,9 +323,11 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             try { await StopAsync().ConfigureAwait(false); }
             catch { TryKill(); }
         }
+        _heartbeatStop.Cancel();
         _lifetime.Cancel();
         await CleanupTransportAsync().ConfigureAwait(false);
         _requestLock.Dispose();
+        _heartbeatStop.Dispose();
         _lifetime.Dispose();
         _process.Dispose();
     }
