@@ -11,7 +11,7 @@ namespace OpenSim.GameRuntime;
 public sealed class GameRuntimeOptions
 {
     public bool Enabled { get; init; }
-    public required string WorkerAssemblyPath { get; init; }
+    public string WorkerAssemblyPath { get; init; } = string.Empty;
     public TimeSpan StartupTimeout { get; init; } = TimeSpan.FromSeconds(15);
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(5);
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(10);
@@ -388,8 +388,8 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
 
     private static void ValidateOptions(GameRuntimeOptions options)
     {
-        if (string.IsNullOrWhiteSpace(options.WorkerAssemblyPath))
-            throw new ArgumentException("Worker assembly path is required.", nameof(options));
+        if (options.Enabled && string.IsNullOrWhiteSpace(options.WorkerAssemblyPath))
+            throw new ArgumentException("Worker assembly path is required when Game Runtime is enabled.", nameof(options));
         if (options.MaximumActiveInstances < 1 || options.MaximumActiveInstances > 256)
             throw new ArgumentOutOfRangeException(nameof(options.MaximumActiveInstances));
         foreach (TimeSpan timeout in new[] { options.StartupTimeout, options.RequestTimeout, options.ShutdownTimeout,
