@@ -7,6 +7,7 @@ namespace OpenSim.GamePhysics.Worker;
 public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
 {
     private const int HardBodyLimit = 128;
+    private const int HardTotalBodyLimit = 384;
     private const int MaxStepsPerCommand = 3;
     private const float FixedTimeStep = 1f / 30f;
     private static readonly HashSet<string> SupportedShapes = new(StringComparer.OrdinalIgnoreCase)
@@ -31,6 +32,10 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         if (worldId == Guid.Empty)
             throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "World ID is required.");
 
+        string profile = GetString(configuration, "profile", "Balanced");
+        if (profile is not ("Lightweight" or "Balanced" or "Advanced"))
+            throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "Unknown physics profile.");
+
         if (TryGet(configuration, "gravity", out JsonElement gravity))
             _gravity = ReadVector(gravity, "gravity");
 
@@ -48,7 +53,7 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         {
             state = "Created",
             worldId = _worldId,
-            profile = GetString(configuration, "profile", "Balanced"),
+            profile,
             fixedTimeStep = FixedTimeStep,
             maxDynamicBodies = _maxDynamicBodies
         });
@@ -61,7 +66,13 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         if (_bodies.ContainsKey(bodyId))
             throw new WorkerCommandException(WorkerErrorCode.ObjectAlreadyExists, "Body ID already exists.");
 
-        bool isStatic = TryGet(body, "isStatic", out JsonElement staticValue) && staticValue.ValueKind == JsonValueKind.True;
+        bool isStatic = false;
+        if (TryGet(body, "isStatic", out JsonElement staticValue))
+        {
+            if (staticValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "isStatic must be a boolean.");
+            isStatic = staticValue.GetBoolean();
+        }
         string shape = GetString(body, "shape", "Box");
         if (!SupportedShapes.Contains(shape))
             throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "Unsupported body shape.");
@@ -69,6 +80,8 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         float mass = isStatic ? 0 : ReadFiniteFloat(body, "mass", 1f, 0.0001f, 100000f);
         Vector3 position = TryGet(body, "position", out JsonElement pos) ? ReadVector(pos, "position") : Vector3.Zero;
 
+        if (_bodies.Count >= HardTotalBodyLimit)
+            throw new WorkerCommandException(WorkerErrorCode.CapacityExceeded, "Total body capacity has been reached.");
         if (!isStatic && _bodies.Values.Count(x => !x.IsStatic) >= _maxDynamicBodies)
             throw new WorkerCommandException(WorkerErrorCode.CapacityExceeded, "Dynamic body capacity has been reached.");
 
@@ -93,7 +106,10 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         if (body.IsStatic)
             throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "Static bodies cannot receive impulses.");
         Vector3 impulse = ReadVector(GetRequired(command, "impulse"), "impulse");
-        body.Velocity += impulse / body.Mass;
+        Vector3 nextVelocity = body.Velocity + impulse / body.Mass;
+        if (!IsValidVector(nextVelocity))
+            throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "Impulse would exceed the permitted velocity range.");
+        body.Velocity = nextVelocity;
         return JsonSerializer.SerializeToElement(new { bodyId = body.Id, velocity = ToJson(body.Velocity) });
     }
 
@@ -111,8 +127,12 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
             {
                 if (body.IsStatic)
                     continue;
-                body.Velocity += _gravity * FixedTimeStep;
-                body.Position += body.Velocity * FixedTimeStep;
+                Vector3 nextVelocity = body.Velocity + _gravity * FixedTimeStep;
+                Vector3 nextPosition = body.Position + nextVelocity * FixedTimeStep;
+                if (!IsValidVector(nextVelocity) || !IsValidVector(nextPosition))
+                    throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "Simulation state exceeded permitted world bounds.");
+                body.Velocity = nextVelocity;
+                body.Position = nextPosition;
             }
             _tick++;
         }
@@ -253,6 +273,10 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
             throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, $"{name} must be a non-empty string.");
         return value.GetString()!;
     }
+
+    private static bool IsValidVector(Vector3 vector) =>
+        float.IsFinite(vector.X) && float.IsFinite(vector.Y) && float.IsFinite(vector.Z) &&
+        MathF.Abs(vector.X) <= 1_000_000f && MathF.Abs(vector.Y) <= 1_000_000f && MathF.Abs(vector.Z) <= 1_000_000f;
 
     private static object ToJson(Vector3 vector) => new { x = vector.X, y = vector.Y, z = vector.Z };
 
