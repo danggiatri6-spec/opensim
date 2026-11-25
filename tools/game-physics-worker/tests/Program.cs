@@ -82,6 +82,12 @@ static async Task RunRoundTripAsync()
     using (JsonDocument? ready = await SendAsync(stream, hello))
     {
         if (ready is not null) Console.WriteLine("Handshake response: " + ready.RootElement.GetRawText());
+        else
+        {
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Console.WriteLine("Worker exit code: " + process.ExitCode);
+            Console.WriteLine("Worker diagnostic: " + await process.StandardError.ReadToEndAsync());
+        }
         Assert(ready is not null && ready.RootElement.GetProperty("ok").GetBoolean(), "worker authenticates host and completes handshake");
     }
 
