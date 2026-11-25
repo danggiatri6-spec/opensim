@@ -123,6 +123,11 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     }));
     JsonElement started = await supervisor.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
     Assert(started.GetProperty("state").GetString() == "Running", "worker starts the background fixed-step simulation");
+    JsonElement firstSnapshotEvent = await supervisor.ReadEventAsync()
+        .AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+    Assert(firstSnapshotEvent.GetProperty("type").GetString() == "Snapshot" &&
+        firstSnapshotEvent.GetProperty("snapshot").GetProperty("tick").GetInt64() >= 2,
+        "supervisor receives asynchronous snapshots while request responses remain correlated");
     bool liveManualStepRejected = false;
     try
     {
