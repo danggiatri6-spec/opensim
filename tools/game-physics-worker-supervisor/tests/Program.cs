@@ -38,19 +38,62 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     {
         profile = "Balanced",
         gravity = new { x = 0f, y = -9.81f, z = 0f },
-        maxDynamicBodies = 4
+        maxDynamicBodies = 1
     }));
     Assert(world.GetProperty("state").GetString() == "Created", "fake adapter creates one bounded physics world");
+
+    Guid invalidShapeId = Guid.NewGuid();
+    bool invalidShapeRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+        {
+            bodyId = invalidShapeId, mass = 1f, shape = "UnknownShape"
+        }));
+    }
+    catch (InvalidOperationException) { invalidShapeRejected = true; }
+    Assert(invalidShapeRejected, "fake adapter rejects unsupported collision shapes");
+
+    Guid invalidMassId = Guid.NewGuid();
+    bool invalidMassRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+        {
+            bodyId = invalidMassId, mass = 0f, shape = "Box"
+        }));
+    }
+    catch (InvalidOperationException) { invalidMassRejected = true; }
+    Assert(invalidMassRejected, "fake adapter rejects zero-mass dynamic bodies");
 
     Guid bodyId = Guid.NewGuid();
     await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
     {
         bodyId, mass = 2f, shape = "Box", position = new { x = 0f, y = 10f, z = 0f }
     }));
+
+    bool capacityRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+        {
+            bodyId = Guid.NewGuid(), mass = 1f, shape = "Sphere"
+        }));
+    }
+    catch (InvalidOperationException) { capacityRejected = true; }
+    Assert(capacityRejected, "fake adapter enforces the configured dynamic-body capacity");
     await supervisor.RequestAsync("SetVelocity", JsonSerializer.SerializeToElement(new
     {
         bodyId, velocity = new { x = 1f, y = 0f, z = 0f }
     }));
+    bool catchUpRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 4 }));
+    }
+    catch (InvalidOperationException) { catchUpRejected = true; }
+    Assert(catchUpRejected, "fake adapter rejects a step request beyond the bounded catch-up limit");
+
     JsonElement snapshot = default;
     for (int i = 0; i < 10; i++)
         snapshot = await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 3 }));
