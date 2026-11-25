@@ -92,6 +92,7 @@ internal static class Program
             return 5;
         }
 
+        using IPhysicsWorldAdapter adapter = new FakePhysicsWorldAdapter();
         await WriteResponseAsync(stream, hello, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }));
 
         long lastSequence = 1;
@@ -123,13 +124,39 @@ internal static class Program
                 continue;
             }
 
-            if (request.Operation != "Echo")
+            if (request.Operation == "Echo")
             {
-                await WriteResponseAsync(stream, request, false, WorkerErrorCode.UnsupportedOperation, JsonSerializer.SerializeToElement(new { }));
+                await WriteResponseAsync(stream, request, true, null, request.Payload);
                 continue;
             }
 
-            await WriteResponseAsync(stream, request, true, null, request.Payload);
+            try
+            {
+                JsonElement result = request.Operation switch
+                {
+                    "CreateWorld" => adapter.CreateWorld(hello.WorldId, request.Payload),
+                    "CreateBody" => adapter.CreateBody(request.Payload),
+                    "SetVelocity" => adapter.SetVelocity(request.Payload),
+                    "ApplyImpulse" => adapter.ApplyImpulse(request.Payload),
+                    "Step" => adapter.Step(request.Payload),
+                    "GetSnapshot" => adapter.GetSnapshot(),
+                    "DestroyBody" => adapter.DestroyBody(request.Payload),
+                    "StopWorld" => adapter.StopWorld(),
+                    _ => throw new WorkerCommandException(WorkerErrorCode.UnsupportedOperation, "Operation is not supported by this worker.")
+                };
+                await WriteResponseAsync(stream, request, true, null, result);
+            }
+            catch (WorkerCommandException ex)
+            {
+                await WriteResponseAsync(stream, request, false, ex.Code,
+                    JsonSerializer.SerializeToElement(new { message = ex.Message }));
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Worker command failed: {ex.GetType().Name}");
+                await WriteResponseAsync(stream, request, false, WorkerErrorCode.InternalError,
+                    JsonSerializer.SerializeToElement(new { message = "Worker command failed." }));
+            }
         }
     }
 
