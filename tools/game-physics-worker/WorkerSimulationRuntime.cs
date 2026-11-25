@@ -158,6 +158,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
         {
             _faulted = true;
             _running = false;
+            _stopRequested = true;
             FailQueued(WorkerErrorCode.BackendOperationFailed, "Physics simulation step failed.");
         }
     }
@@ -211,6 +212,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
             {
                 _faulted = true;
                 _running = false;
+                _stopRequested = true;
                 throw new WorkerCommandException(WorkerErrorCode.EventOverflow,
                     "Critical physics event queue overflowed; event delivery cannot be guaranteed.");
             }
