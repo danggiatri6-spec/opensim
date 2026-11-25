@@ -90,6 +90,23 @@ await using (var stopFailureRuntime = new GameRuntimeService(projects, stopFailu
         "failed stop faults the instance and disposes the worker session");
 }
 
+var shutdownProjects = new FakeProjectService(owner, projectId, worldId);
+UUID secondProjectId = UUID.Random();
+UUID secondWorldId = UUID.Random();
+shutdownProjects.AddProject(owner, secondProjectId, secondWorldId);
+var shutdownWorkers = new FakeWorkerFactory();
+var shutdownRuntime = new GameRuntimeService(shutdownProjects, shutdownWorkers, options);
+GameInstanceResult shutdownFirst = await shutdownRuntime.StartInstanceAsync(owner, projectId, 1);
+GameInstanceResult shutdownSecond = await shutdownRuntime.StartInstanceAsync(owner, secondProjectId, 1);
+Assert(shutdownFirst.Success && shutdownSecond.Success, "host can own multiple independent Game Instances");
+await shutdownRuntime.DisposeAsync();
+GameInstanceResult shutdownFirstState = await shutdownRuntime.GetInstanceAsync(owner, shutdownFirst.Instance!.InstanceID);
+GameInstanceResult shutdownSecondState = await shutdownRuntime.GetInstanceAsync(owner, shutdownSecond.Instance!.InstanceID);
+Assert(shutdownFirstState.Instance?.State == GameInstanceState.Stopped &&
+    shutdownSecondState.Instance?.State == GameInstanceState.Stopped &&
+    shutdownWorkers.Sessions.Count == 2 && shutdownWorkers.Sessions.All(s => s.Disposed),
+    "host shutdown gracefully stops and disposes every live instance independently");
+
 var workerAssemblyPath = Path.GetFullPath(Path.Combine(
     AppContext.BaseDirectory,
     "../../../../../game-physics-worker/bin/Release/net8.0/GamePhysicsWorker.dll"));
@@ -121,10 +138,17 @@ sealed class FakeProjectService : IGameProjectService
 {
     public GameProject Project { get; }
     public GameProjectRevision Revision { get; }
+    public GameProject? SecondProject { get; private set; }
+    public GameProjectRevision? SecondRevision { get; private set; }
     public FakeProjectService(UUID owner, UUID project, UUID world)
     {
         Project = new GameProject { ProjectID = project, OwnerID = owner, Name = "Test Game", Status = GameProjectStatus.Published, CurrentRevision = 1 };
         Revision = new GameProjectRevision { ProjectID = project, Revision = 1, CreatedBy = owner, SchemaVersion = 1, ManifestJson = CreateManifest(world) };
+    }
+    public void AddProject(UUID owner, UUID project, UUID world)
+    {
+        SecondProject = new GameProject { ProjectID = project, OwnerID = owner, Name = "Second Game", Status = GameProjectStatus.Published, CurrentRevision = 1 };
+        SecondRevision = new GameProjectRevision { ProjectID = project, Revision = 1, CreatedBy = owner, SchemaVersion = 1, ManifestJson = CreateManifest(world) };
     }
     public static string CreateManifest(UUID world) => JsonSerializer.Serialize(new
     {
@@ -134,13 +158,25 @@ sealed class FakeProjectService : IGameProjectService
         settings = new { gameMode = "sandbox", defaultWorldID = world.ToString(), visibility = "private", maxPlayers = 16, tags = Array.Empty<string>() }
     });
     public GameProjectResult CreateProject(UUID owner, string name, string description) => throw new NotImplementedException();
-    public GameProjectResult GetProject(UUID owner, UUID id) => owner == Project.OwnerID && id == Project.ProjectID
-        ? new GameProjectResult { Error = GameProjectError.None, Project = Project }
-        : new GameProjectResult { Error = GameProjectError.NotFound };
+    public GameProjectResult GetProject(UUID owner, UUID id)
+    {
+        if (owner == Project.OwnerID && id == Project.ProjectID)
+            return new GameProjectResult { Error = GameProjectError.None, Project = Project };
+        if (SecondProject is not null && owner == SecondProject.OwnerID && id == SecondProject.ProjectID)
+            return new GameProjectResult { Error = GameProjectError.None, Project = SecondProject };
+        return new GameProjectResult { Error = GameProjectError.NotFound };
+    }
     public List<GameProject> GetOwnedProjects(UUID owner, int offset, int limit) => new();
     public GameProjectResult SaveDraft(UUID owner, UUID id, long expected, GameProjectManifest manifest) => throw new NotImplementedException();
-    public GameProjectRevision? GetRevision(UUID owner, UUID id, long revision) =>
-        owner == Project.OwnerID && id == Project.ProjectID && revision == Revision.Revision ? Revision : null;
+    public GameProjectRevision? GetRevision(UUID owner, UUID id, long revision)
+    {
+        if (owner == Project.OwnerID && id == Project.ProjectID && revision == Revision.Revision)
+            return Revision;
+        if (SecondProject is not null && SecondRevision is not null &&
+            owner == SecondProject.OwnerID && id == SecondProject.ProjectID && revision == SecondRevision.Revision)
+            return SecondRevision;
+        return null;
+    }
     public GameProjectResult UpdateMetadata(UUID owner, UUID id, long expected, string name, string description) => throw new NotImplementedException();
     public bool ArchiveProject(UUID owner, UUID id) => false;
 }
