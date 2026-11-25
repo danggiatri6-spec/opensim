@@ -10,6 +10,7 @@ public interface IPhysicsWorldAdapter : IDisposable
     JsonElement SetVelocity(JsonElement command);
     JsonElement ApplyImpulse(JsonElement command);
     JsonElement Step(JsonElement command);
+    IReadOnlyList<JsonElement> DrainEvents() => Array.Empty<JsonElement>();
     JsonElement GetSnapshot();
     JsonElement DestroyBody(JsonElement command);
     JsonElement StopWorld();
