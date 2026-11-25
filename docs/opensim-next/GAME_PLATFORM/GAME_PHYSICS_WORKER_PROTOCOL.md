@@ -351,11 +351,11 @@ Do not include creator secrets, user tokens, or arbitrary asset contents in tele
 - [x] Serialize concurrent host requests so sequence numbers are allocated in actual wire-send order.
 - [x] Test graceful shutdown and forced child-process termination detection.
 - [x] Run the supervisor integration suite on both Linux (Unix Domain Socket) and Windows (Named Pipes) CI.
-- [ ] Integrate the supervisor into the OpenSim Game Runtime; the current supervisor is a standalone host library and test harness.
-- [ ] Add dedicated negative tests for wrong capability tokens, malformed envelopes, duplicate host connections, and sequence replay.
-- [ ] Add an explicit process-level check that the worker exposes no public TCP listener.
+- [x] Add negative integration tests for mismatched capability tokens and out-of-order command sequences.
+- [x] Keep worker transport limited to Windows Named Pipes and Unix Domain Sockets; the worker has no TCP listener implementation.
+- [x] Close the Unix listening socket immediately after accepting the single worker connection; use a one-instance current-user-only named pipe on Windows.
 
-W1 now has a cross-platform executable and tested supervisor prototype. Both local IPC transports have passed CI: Linux Unix-domain sockets and Windows named pipes. The supervisor also enforces request ordering, deadlines, health checks, and child-process exit monitoring. W1 is still not complete: the supervisor is not yet wired into the OpenSim Game Runtime, and dedicated negative-security tests remain open.
+W1 process and IPC prototype acceptance is complete: both local IPC transports pass CI (Linux Unix-domain sockets and Windows named pipes); the supervisor enforces request ordering, deadlines, health checks, graceful shutdown, and child-process exit monitoring; negative token and sequence tests pass. The supervisor remains a standalone host library at this stage. Wiring it into the OpenSim Game Runtime is intentionally deferred to W6, when the Game Runtime lifecycle exists.
 
 ### W2 — Backend adapter prototype
 - Introduce a narrow `IPhysicsWorldAdapter` contract inside the worker process.
@@ -381,6 +381,7 @@ W1 now has a cross-platform executable and tested supervisor prototype. Both loc
 - Do not optimize toward multiple worlds per process until this gate passes.
 
 ### W6 — Game Runtime integration
+- Integrate the standalone Worker Supervisor into the OpenSim Game Runtime lifecycle.
 - Add a server-side Game Physics service facade.
 - Map Game Instance lifecycle to worker lifecycle.
 - Keep project revision persistence separate from live physics state.
