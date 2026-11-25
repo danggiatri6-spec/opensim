@@ -395,3 +395,32 @@ Create a test-only harness around the narrowest existing backend boundary, rathe
 | Compatibility | Existing Region physics regression suite remains unchanged | Do not merge changes into the legacy Region path |
 
 **Current decision:** the source audit identifies a concrete teardown race and global configuration coupling, but has not yet demonstrated a runtime failure or a safe fix. The next code change should be a test-only lifecycle spike or a narrowly scoped new backend core; it should not be a broad BSScene, BSParam, or Scene.cs rewrite.
+
+## 19. BulletS API ownership and thread-control audit (2026-11-25)
+
+This follow-up traces the engine factory, unmanaged API ownership, managed XNA fallback, and the physics worker control path. It remains a source audit; no runtime isolation test has been run.
+
+### Findings
+
+1. `BSScene.SelectUnderlyingBulletEngine` creates a new `BSAPIUnman(engineName, this)` or `BSAPIXNA(engineName, this)` for each scene. This is a useful starting point: the API object is not obtained from a process-wide singleton in this factory path.
+2. `BSAPIUnman` stores its `PhysicsScene`, parameter/collision/update `GCHandle` values, and debug callback delegate as instance fields. Its `Initialize` pins the buffers and calls native `Initialize2`; `PhysicsStep` and `Shutdown` use the world pointer. This suggests a per-scene ownership boundary, but does not yet prove that the native library has no process-global mutable state or that native callbacks cannot outlive shutdown.
+3. `BSAPIUnman.Shutdown` calls native `Shutdown2` before freeing the three pinned handles. This ordering is sensible only if every native step and callback has already completed. The caller currently does not establish that guarantee by joining the physics thread.
+4. `BSScene.BulletSPluginPhysicsThread` creates `m_updateWaitEvent` inside the worker, loops on `m_initialized`, steps, and may block in `WaitOne(timeout)`. The inspected `BSScene.cs` has no corresponding `.Set()` call. A stop protocol must therefore explicitly wake the wait and handle the race where disposal begins before the worker has initialized its event.
+5. `BSScene.Dispose` sets `m_initialized = false` and immediately destroys bodies, constraints, shapes, terrain and the backend world. It does not signal the worker, join `m_physicsThread`, or dispose the wait handle in the inspected method. This is a concrete lifecycle gap in the current source path, not proof that a crash has already occurred in production.
+6. The managed `BSAPIXNA` implementation is not automatically a clean multi-world fallback. It has static mutable state (including `m_collisionsThisFrame`) and its static `Initialize2` reads values from `BSParam`. Engine selection also changes static `BSParam` feature flags for XNA capability fallbacks. These paths need separate isolation work and tests.
+7. The unmanaged API instance owns its managed pinned buffers, but the native world pointer is created by a shared native library. Before in-process multi-world support can be approved, inspect the native BulletSim implementation for static singleton state, global callback registration, shared allocators, and shutdown semantics.
+
+### Updated prototype boundary
+
+The first test should target `BSAPIUnman` below `BSScene`, not instantiate `BSScene` with a fake Region:
+
+- Add a test-only internal harness/factory seam that can construct the unmanaged API with isolated parameter and output buffers and create two native worlds without registering either as a Region `PhysicsScene`.
+- Keep all calls to a given world's native pointer serialized until the backend explicitly documents safe concurrent access. Test alternating A/B steps first; only then test parallel stepping.
+- Add a lifecycle owner with a stop signal created before worker start. Stop must be: reject new commands → signal stop → wake wait → join worker → drain callbacks/updates → destroy bodies/constraints/shapes → native shutdown → free pinned buffers → dispose wait handle.
+- Make stop/dispose idempotent and ensure exceptions during cleanup do not skip later resource release.
+- Run a native two-world test that destroys A while B continues stepping. Then run repeated create/step/destroy cycles and verify no stale callback, invalid native pointer, pinned-handle leak, or unbounded memory growth.
+- Audit native source before interpreting a passing managed harness as proof of process-level isolation.
+
+### Decision update
+
+The source evidence strengthens the case for a narrow unmanaged backend spike, but does not justify modifying legacy `BSScene` lifecycle yet. Keep existing Region behavior untouched. If native source audit or the two-world test reveals process-global state, callback cross-talk, or unreliable teardown that cannot be isolated without invasive changes, use a dedicated worker-process boundary for Game Physics rather than weakening legacy Region stability.
