@@ -1,0 +1,25 @@
+:VERSION 1
+CREATE TABLE GameProjects (
+    ProjectID TEXT NOT NULL PRIMARY KEY,
+    OwnerID TEXT NOT NULL,
+    Name TEXT NOT NULL,
+    Description TEXT NOT NULL,
+    Status INTEGER NOT NULL,
+    SchemaVersion INTEGER NOT NULL,
+    CurrentRevision INTEGER NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    UpdatedUTC TEXT NOT NULL
+);
+CREATE INDEX IX_GameProjects_Owner_Updated
+    ON GameProjects (OwnerID, Status, UpdatedUTC);
+
+CREATE TABLE GameProjectRevisions (
+    ProjectID TEXT NOT NULL,
+    Revision INTEGER NOT NULL,
+    SchemaVersion INTEGER NOT NULL,
+    ManifestJson TEXT NOT NULL,
+    CreatedBy TEXT NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    PRIMARY KEY (ProjectID, Revision),
+    FOREIGN KEY (ProjectID) REFERENCES GameProjects(ProjectID) ON DELETE CASCADE
+);
