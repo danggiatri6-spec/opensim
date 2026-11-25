@@ -257,51 +257,66 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         if (!allowStopping && State != WorkerLifecycleState.Ready)
             throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
+        Guid requestId = Guid.NewGuid();
+        PendingRequest? pending = null;
+        bool writeStarted = false;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
         linked.CancelAfter(_options.RequestTimeout);
-        WorkerProtocolEnvelope? request = null;
-        PendingRequest? pending = null;
-
-        await _writeLock.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
-            if (!allowStopping && State != WorkerLifecycleState.Ready)
-                throw new InvalidOperationException($"Worker is not ready (state: {State}).");
-
-            request = new WorkerProtocolEnvelope
+            await _writeLock.WaitAsync(linked.Token).ConfigureAwait(false);
+            try
             {
-                Kind = WorkerMessageKind.Request,
-                WorldId = _options.WorldId,
-                RequestId = Guid.NewGuid(),
-                Sequence = Interlocked.Increment(ref _sequence),
-                Operation = operation,
-                Payload = payload.Clone()
-            };
-            pending = new PendingRequest(request.Sequence);
-            if (!_pending.TryAdd(request.RequestId!.Value, pending))
-                throw new InvalidOperationException("Could not register worker request.");
+                if (!allowStopping && State != WorkerLifecycleState.Ready)
+                    throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
-            await WorkerFrameCodec.WriteAsync(_stream, bytes,
-                WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
-        }
-        catch
-        {
-            if (request?.RequestId is Guid requestId)
-                _pending.TryRemove(requestId, out _);
-            throw;
-        }
-        finally { _writeLock.Release(); }
+                // Allocate sequence while holding the writer lock so sequence order
+                // is exactly the order in which frames enter the IPC stream.
+                var request = new WorkerProtocolEnvelope
+                {
+                    Kind = WorkerMessageKind.Request,
+                    WorldId = _options.WorldId,
+                    RequestId = requestId,
+                    Sequence = ++_sequence,
+                    Operation = operation,
+                    Payload = payload.Clone()
+                };
+                pending = new PendingRequest(request.Sequence);
+                if (!_pending.TryAdd(requestId, pending))
+                    throw new InvalidOperationException("Could not register worker request.");
 
-        try
-        {
+                byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
+                writeStarted = true;
+                await WorkerFrameCodec.WriteAsync(_stream, bytes,
+                    WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
+            }
+            finally { _writeLock.Release(); }
+
             return await pending!.Completion.Task.WaitAsync(linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
+            if (writeStarted && pending is not null && !pending.Completion.Task.IsCompleted)
+            {
+                SetState(WorkerLifecycleState.Faulted);
+                TryKill();
+            }
             throw new TimeoutException($"Worker request '{operation}' exceeded its deadline.");
         }
-        finally { _pending.TryRemove(request!.RequestId!.Value, out _); }
+        catch
+        {
+            if (writeStarted && pending is not null && !pending.Completion.Task.IsCompleted)
+            {
+                SetState(WorkerLifecycleState.Faulted);
+                TryKill();
+            }
+            throw;
+        }
+        finally
+        {
+            if (pending is not null)
+                _pending.TryRemove(requestId, out _);
+        }
     }
 
     private async Task<JsonDocument> ExchangeHandshakeAsync(
