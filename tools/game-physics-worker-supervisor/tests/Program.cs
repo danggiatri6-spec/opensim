@@ -98,7 +98,7 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     for (int i = 0; i < 10; i++)
         snapshot = await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 3 }));
     JsonElement bodyState = snapshot.GetProperty("bodies")[0];
-    Assert(snapshot.GetProperty("tick").GetInt64() == tickBeforeBoundaryTest &&
+    Assert(snapshot.GetProperty("tick").GetInt64() == 30 &&
         bodyState.GetProperty("position").GetProperty("y").GetSingle() < 10f,
         "fake adapter advances deterministic fixed 30 Hz gravity steps");
 
@@ -157,7 +157,7 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     }
     catch (InvalidOperationException) { worldBoundRejected = true; }
     snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
-    Assert(worldBoundRejected && snapshot.GetProperty("tick").GetInt64() == 30 &&
+    Assert(worldBoundRejected && snapshot.GetProperty("tick").GetInt64() == tickBeforeBoundaryTest &&
         snapshot.GetProperty("bodies")[0].GetProperty("position").GetProperty("y").GetSingle() == 1_000_000f,
         "fake adapter rejects out-of-bounds steps without partially advancing the world");
     await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = boundaryBodyId }));
