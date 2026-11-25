@@ -44,6 +44,7 @@ workers.Sessions[^1].SetFaulted();
 await Task.Delay(250);
 GameInstanceResult faulted = await runtime.GetInstanceAsync(owner, restarted.Instance!.InstanceID);
 Assert(faulted.Success && faulted.Instance?.State == GameInstanceState.Faulted, "worker fault propagates to its instance");
+Assert(workers.Sessions[^1].Disposed, "faulted worker session is disposed after fault propagation");
 
 projects.Project.Status = GameProjectStatus.Archived;
 GameInstanceResult archived = await runtime.StartInstanceAsync(owner, projectId, 1);
@@ -145,9 +146,10 @@ sealed class FakeSession : IGamePhysicsWorkerSession
         return Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Running" }));
     }
     public bool Started { get; private set; }
+    public bool Disposed { get; private set; }
     public Task<JsonElement> StopWorldAsync(CancellationToken cancellationToken) =>
         Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Stopped" }));
     public Task StopAsync(CancellationToken cancellationToken) { State = WorkerLifecycleState.Stopped; return Task.CompletedTask; }
-    public ValueTask DisposeAsync() { State = WorkerLifecycleState.Stopped; return ValueTask.CompletedTask; }
+    public ValueTask DisposeAsync() { Disposed = true; State = WorkerLifecycleState.Stopped; return ValueTask.CompletedTask; }
     public void SetFaulted() => State = WorkerLifecycleState.Faulted;
 }
