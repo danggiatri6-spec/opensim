@@ -171,7 +171,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            record.Worker = await _workers.StartAsync(record.Snapshot.WorldID.Guid, cancellationToken).ConfigureAwait(false);
+            record.Worker = await _workers.StartAsync(Guid.Parse(record.Snapshot.WorldID.ToString()), cancellationToken).ConfigureAwait(false);
             JsonElement config = JsonSerializer.SerializeToElement(new
             {
                 profile = "Balanced",
