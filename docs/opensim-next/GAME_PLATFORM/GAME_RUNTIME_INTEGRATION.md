@@ -39,7 +39,7 @@ Rules:
 5. Resolve `Settings.DefaultWorldID` to exactly one world in the selected revision.
 6. Generate a new host-owned Game Instance ID and physics World ID. Never accept native handles or world IDs from Creator input.
 7. Reserve the instance in the host registry before launching the worker so concurrent start requests cannot create duplicate records for the same reservation.
-8. Start the Worker, complete the authenticated handshake, then send `CreateWorld`. Mark the instance Running only after the worker confirms world creation.
+8. Start the Worker, complete the authenticated handshake, send `CreateWorld`, then send `StartSimulation`. Mark the instance Running only after both operations succeed.
 9. If startup fails at any point, terminate and reap the child, clean up IPC resources, release the reservation, and return a bounded WorkerUnavailable error.
 10. Stop transitions to Stopping, asks the worker to stop the world and exit, and enforces a deadline. On timeout, kill and reap the child and record Faulted; do not report a successful graceful stop.
 11. A heartbeat/process failure transitions the instance to Faulted and prevents new physics commands or stale event application.
@@ -124,3 +124,19 @@ Reject missing worker artifacts and invalid timeout values during service initia
 - Verify existing Region/Scene physics behavior and SL login compatibility remain unchanged.
 
 No W6 gate is considered complete merely because the standalone Worker tests pass. The runtime service must be exercised through its own integration runner.
+
+
+## 7. W6 implementation and verification status
+
+- [x] Runtime service implementation with owner/revision validation and runtime manifest re-validation.
+- [x] Host-generated instance/world IDs and duplicate-start reservation.
+- [x] Worker factory adapter over the existing process supervisor.
+- [x] Worker world creation followed by explicit fixed-step simulation start.
+- [x] Typed start failures and startup rollback.
+- [x] Service-level tests for ownership, archived projects, malformed manifests, duplicate starts, stop/restart, worker faults, and startup rollback.
+- [x] Linux and Windows CI for the existing service-level test runner.
+- [ ] Real child-process acceptance test: authenticated launch, world creation, simulation start, graceful stop, and process reap.
+- [ ] OpenSim service configuration/registry integration and deployment packaging.
+- [ ] Fault-stop cleanup and host-shutdown acceptance tests.
+
+The standalone runtime assembly is intentionally not yet registered as a default OpenSim service. It remains disabled unless explicitly constructed with `GameRuntimeOptions.Enabled = true`; service registration follows after deployment paths and shutdown ownership are proven.
