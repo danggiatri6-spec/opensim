@@ -39,8 +39,11 @@ jobs:
       - name: Build OpenSim
         run: dotnet build --configuration Release OpenSim.sln
 
-      - name: Build Game Runtime service
-        run: dotnet build --configuration Release tools/game-runtime/GameRuntime.csproj
+      - name: Build Game Runtime service and tests
+        run: dotnet build --configuration Release tools/game-runtime/tests/GameRuntime.Tests.csproj
+
+      - name: Run Game Runtime lifecycle tests
+        run: dotnet run --no-build --configuration Release --project tools/game-runtime/tests/GameRuntime.Tests.csproj
 
       - name: Run AI Friend domain tests
         run: dotnet run --configuration Release --project tools/ai-friend-test-runner/AiFriend.TestRunner.csproj
