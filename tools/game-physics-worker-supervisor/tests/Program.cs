@@ -115,6 +115,28 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
     Assert(snapshot.GetProperty("bodies").GetArrayLength() == 0, "fake adapter destroys bodies by opaque ID");
 
+    Guid boundaryBodyId = Guid.NewGuid();
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = boundaryBodyId, mass = 1f, shape = "Sphere",
+        position = new { x = 0f, y = 1_000_000f, z = 0f }
+    }));
+    await supervisor.RequestAsync("SetVelocity", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = boundaryBodyId, velocity = new { x = 0f, y = 100f, z = 0f }
+    }));
+    bool worldBoundRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 1 }));
+    }
+    catch (InvalidOperationException) { worldBoundRejected = true; }
+    snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+    Assert(worldBoundRejected && snapshot.GetProperty("tick").GetInt64() == 30 &&
+        snapshot.GetProperty("bodies")[0].GetProperty("position").GetProperty("y").GetSingle() == 1_000_000f,
+        "fake adapter rejects out-of-bounds steps without partially advancing the world");
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = boundaryBodyId }));
+
     bool secondWorldRejected = false;
     try
     {
