@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using OpenSim.GamePhysics.Worker;
 using OpenSim.GamePhysics.WorkerProtocol;
