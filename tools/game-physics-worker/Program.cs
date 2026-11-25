@@ -117,9 +117,15 @@ internal static class Program
                 return 0;
             }
 
+            if (request.Operation == "Ping")
+            {
+                await WriteResponseAsync(stream, request, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }));
+                continue;
+            }
+
             if (request.Operation != "Echo")
             {
-                await WriteResponseAsync(stream, request, false, WorkerErrorCode.UnsupportedOperation, default);
+                await WriteResponseAsync(stream, request, false, WorkerErrorCode.UnsupportedOperation, JsonSerializer.SerializeToElement(new { }));
                 continue;
             }
 
@@ -134,6 +140,9 @@ internal static class Program
         WorkerErrorCode? error,
         JsonElement payload)
     {
+        if (payload.ValueKind == System.Text.Json.JsonValueKind.Undefined)
+            payload = JsonSerializer.SerializeToElement(new { });
+
         var response = new WorkerProtocolEnvelope
         {
             Kind = WorkerMessageKind.Response,
