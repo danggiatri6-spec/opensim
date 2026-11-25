@@ -1,0 +1,48 @@
+:VERSION 1
+CREATE TABLE AiFriendCharacters (
+    CharacterID TEXT NOT NULL PRIMARY KEY,
+    DisplayName TEXT NOT NULL,
+    ProfileDescription TEXT NOT NULL,
+    PersonaVersion INTEGER NOT NULL,
+    AppearanceAssetID TEXT NOT NULL,
+    VoiceProfileID TEXT NOT NULL,
+    PublisherID TEXT NOT NULL,
+    Status INTEGER NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    UpdatedUTC TEXT NOT NULL
+);
+CREATE INDEX IX_AiFriendCharacters_Status ON AiFriendCharacters (Status, DisplayName);
+
+CREATE TABLE AiFriendRelationships (
+    RelationshipID TEXT NOT NULL PRIMARY KEY,
+    UserID TEXT NOT NULL,
+    CharacterID TEXT NOT NULL,
+    State INTEGER NOT NULL,
+    RelationshipLevel INTEGER NOT NULL,
+    FirstMetUTC TEXT NOT NULL,
+    FriendsSinceUTC TEXT NULL,
+    LastInteractionUTC TEXT NULL,
+    AllowProactiveGreeting INTEGER NOT NULL,
+    AllowFollow INTEGER NOT NULL,
+    AllowVoice INTEGER NOT NULL,
+    Version INTEGER NOT NULL,
+    UNIQUE (UserID, CharacterID),
+    FOREIGN KEY (CharacterID) REFERENCES AiFriendCharacters(CharacterID)
+);
+CREATE INDEX IX_AiFriendRelationships_User_State
+    ON AiFriendRelationships (UserID, State);
+
+CREATE TABLE AiFriendMemories (
+    MemoryID TEXT NOT NULL PRIMARY KEY,
+    RelationshipID TEXT NOT NULL,
+    MemoryType INTEGER NOT NULL,
+    Content TEXT NOT NULL,
+    Confidence REAL NOT NULL,
+    SourceConversationID TEXT NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    LastConfirmedUTC TEXT NULL,
+    IsDeleted INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (RelationshipID) REFERENCES AiFriendRelationships(RelationshipID)
+);
+CREATE INDEX IX_AiFriendMemories_Relationship_Created
+    ON AiFriendMemories (RelationshipID, IsDeleted, CreatedUTC);
