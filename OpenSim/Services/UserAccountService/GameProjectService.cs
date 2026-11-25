@@ -267,7 +267,7 @@ namespace OpenSim.Services.UserAccountService
                     return Failure(GameProjectError.RevisionConflict, "Project revision has changed.");
 
                 if (!m_Database.UpdateProjectMetadata(projectID, authenticatedOwnerID,
-                    expectedCurrentRevision, name.Trim(), (description ?? string.Empty).Trim(), DateTime.UtcNow))
+                    expectedCurrentRevision, current.UpdatedUTC, name.Trim(), (description ?? string.Empty).Trim(), DateTime.UtcNow))
                     return Failure(GameProjectError.RevisionConflict, "Project revision has changed.");
 
                 return GetProject(authenticatedOwnerID, projectID);
