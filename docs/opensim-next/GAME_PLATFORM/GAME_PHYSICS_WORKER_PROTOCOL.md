@@ -391,20 +391,21 @@ W3-A implementation in progress:
 - [x] Merge events in the supervisor by event sequence while coalescing stale snapshots.
 - [x] Add integration tests for contact begin/end, trigger enter/exit, and asynchronous snapshot delivery.
 - [x] Test critical-event queue saturation and explicit overflow fault propagation end-to-end; overflow faults the isolated worker and is detected by the supervisor.
-- [ ] Test event ordering under concurrent host requests and thread-join teardown under injected backend failure.
+- [x] Test event ordering under concurrent host requests and thread-join teardown under injected backend failure (Linux and Windows CI run `45544259005`).
 
-W3-B transports both event classes and passes Linux/Windows CI coverage for snapshots, contact/trigger transitions, explicit critical-event overflow, graceful shutdown, and worker crash detection. The fake adapter's overlap calculation is deliberately simplistic and is only an event-pipeline fixture; it does not resolve contacts and is not production physics.
+W3-A and W3-B acceptance tests pass on Linux and Windows CI. Coverage includes snapshots, contact/trigger transitions, explicit critical-event overflow, event ordering during concurrent host requests, graceful shutdown, worker crash detection, and simulation-thread join after an injected backend failure. The fake adapter's overlap calculation is deliberately simplistic and is only an event-pipeline fixture; it does not resolve contacts and is not production physics.
 
 ### W4 — Failure containment
-- Kill the worker during stepping and during teardown.
-- Verify the host remains responsive and marks the instance unavailable.
-- Verify no stale worker messages are applied after replacement.
-- Verify repeated create/stop cycles do not leak processes, handles, or temporary endpoints.
+- [ ] Kill the worker during active stepping and verify the supervisor marks it Faulted.
+- [ ] Verify a second independent worker remains healthy and continues stepping after the first worker crashes.
+- [ ] Verify repeated create/stop cycles exit every child process cleanly.
+- [ ] Exercise startup and shutdown timeout cleanup, including endpoint removal, before production integration.
+- [ ] Verify no stale worker messages are applied after replacement.
 
 ### W5 — Two-instance isolation
-- Run two separate worker processes with different worlds and profiles.
-- Destroy or crash worker A while worker B continues stepping and publishing snapshots.
-- Measure CPU/memory overhead and startup latency.
+- [ ] Run two separate worker processes with different worlds and profiles.
+- [ ] Destroy or crash worker A while worker B continues stepping and publishing snapshots.
+- [ ] Measure CPU/memory overhead and startup latency.
 - Do not optimize toward multiple worlds per process until this gate passes.
 
 ### W6 — Game Runtime integration
