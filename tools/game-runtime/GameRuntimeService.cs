@@ -237,6 +237,18 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 await ReleaseReservationAsync(record).ConfigureAwait(false);
                 return Success(Clone(record.Snapshot));
             }
+            catch (OperationCanceledException)
+            {
+                record.Snapshot.State = GameInstanceState.Faulted;
+                record.Snapshot.LastErrorCode = "WorkerStopCancelled";
+                record.Snapshot.LastErrorMessage = "Worker stop was cancelled; the session was disposed.";
+                if (record.Worker is not null)
+                {
+                    try { await record.Worker.DisposeAsync().ConfigureAwait(false); } catch { }
+                }
+                await ReleaseReservationAsync(record).ConfigureAwait(false);
+                throw;
+            }
             catch
             {
                 record.Snapshot.State = GameInstanceState.Faulted;
@@ -247,7 +259,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                     try { await record.Worker.DisposeAsync().ConfigureAwait(false); } catch { }
                 }
                 await ReleaseReservationAsync(record).ConfigureAwait(false);
-                throw;
+                return Failure(GameInstanceError.WorkerUnavailable, "Game physics worker could not stop cleanly.");
             }
         }
         finally { record.Gate.Release(); }
