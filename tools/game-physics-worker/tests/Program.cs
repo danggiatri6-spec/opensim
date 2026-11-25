@@ -136,6 +136,104 @@ static async Task RunForcedTerminationAsync()
     Assert(process.HasExited, "host can forcibly terminate a worker without affecting the test host");
 }
 
+static async Task RunAuthenticationRejectionAsync()
+{
+    string root = Path.Combine(Path.GetTempPath(), "opensim-worker-auth-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    File.SetUnixFileMode(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    string endpoint = Path.Combine(root, "worker.sock");
+    using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+    listener.Bind(new UnixDomainSocketEndPoint(endpoint));
+    listener.Listen(1);
+
+    string workerDll = typeof(WorkerMarker).Assembly.Location;
+    var start = new System.Diagnostics.ProcessStartInfo("dotnet")
+    {
+        UseShellExecute = false, RedirectStandardInput = true, RedirectStandardError = true, CreateNoWindow = true
+    };
+    start.ArgumentList.Add(workerDll);
+    start.ArgumentList.Add("--socket");
+    start.ArgumentList.Add(endpoint);
+    using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("Worker process did not start.");
+    byte[] expectedToken = RandomNumberGenerator.GetBytes(32);
+    byte[] wrongToken = RandomNumberGenerator.GetBytes(32);
+    await process.StandardInput.WriteLineAsync(Convert.ToBase64String(expectedToken));
+    process.StandardInput.Close();
+
+    using Socket client = await listener.AcceptAsync().WaitAsync(TimeSpan.FromSeconds(15));
+    await using var stream = new NetworkStream(client, ownsSocket: false);
+    var hello = new WorkerProtocolEnvelope
+    {
+        Kind = WorkerMessageKind.Request, WorldId = Guid.NewGuid(), RequestId = Guid.NewGuid(),
+        Sequence = 1, Operation = "Hello",
+        Payload = JsonSerializer.SerializeToElement(new { token = Convert.ToBase64String(wrongToken) })
+    };
+    using (JsonDocument? rejected = await SendAsync(stream, hello))
+    {
+        Assert(rejected is not null &&
+            rejected.RootElement.GetProperty("ok").GetBoolean() == false &&
+            rejected.RootElement.GetProperty("error").GetString() == "AuthenticationFailed",
+            "worker rejects a mismatched capability token");
+    }
+    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(process.ExitCode == 5, "worker exits after failed authentication");
+    CryptographicOperations.ZeroMemory(expectedToken);
+    CryptographicOperations.ZeroMemory(wrongToken);
+    Directory.Delete(root, recursive: true);
+}
+
+static async Task RunSequenceReplayRejectionAsync()
+{
+    string root = Path.Combine(Path.GetTempPath(), "opensim-worker-seq-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    File.SetUnixFileMode(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    string endpoint = Path.Combine(root, "worker.sock");
+    using var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+    listener.Bind(new UnixDomainSocketEndPoint(endpoint));
+    listener.Listen(1);
+
+    string workerDll = typeof(WorkerMarker).Assembly.Location;
+    var start = new System.Diagnostics.ProcessStartInfo("dotnet")
+    {
+        UseShellExecute = false, RedirectStandardInput = true, RedirectStandardError = true, CreateNoWindow = true
+    };
+    start.ArgumentList.Add(workerDll);
+    start.ArgumentList.Add("--socket");
+    start.ArgumentList.Add(endpoint);
+    using var process = System.Diagnostics.Process.Start(start) ?? throw new InvalidOperationException("Worker process did not start.");
+    byte[] token = RandomNumberGenerator.GetBytes(32);
+    await process.StandardInput.WriteLineAsync(Convert.ToBase64String(token));
+    process.StandardInput.Close();
+
+    using Socket client = await listener.AcceptAsync().WaitAsync(TimeSpan.FromSeconds(15));
+    await using var stream = new NetworkStream(client, ownsSocket: false);
+    Guid worldId = Guid.NewGuid();
+    var hello = new WorkerProtocolEnvelope
+    {
+        Kind = WorkerMessageKind.Request, WorldId = worldId, RequestId = Guid.NewGuid(),
+        Sequence = 1, Operation = "Hello",
+        Payload = JsonSerializer.SerializeToElement(new { token = Convert.ToBase64String(token) })
+    };
+    using (JsonDocument? ready = await SendAsync(stream, hello))
+        Assert(ready is not null && ready.RootElement.GetProperty("ok").GetBoolean(), "sequence replay test authenticates worker");
+
+    var replay = new WorkerProtocolEnvelope
+    {
+        Kind = WorkerMessageKind.Request, WorldId = worldId, RequestId = Guid.NewGuid(),
+        Sequence = 3, Operation = "Echo",
+        Payload = JsonSerializer.SerializeToElement(new { shouldReject = true })
+    };
+    using (JsonDocument? response = await SendAsync(stream, replay))
+        Assert(response is null, "worker closes the session on an out-of-order command sequence");
+
+    await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(process.ExitCode == 6, "worker reports invalid command sequence through process exit status");
+    CryptographicOperations.ZeroMemory(token);
+    Directory.Delete(root, recursive: true);
+}
+
 await RunRoundTripAsync();
+await RunAuthenticationRejectionAsync();
+await RunSequenceReplayRejectionAsync();
 await RunForcedTerminationAsync();
 Console.WriteLine("All Game Physics Worker integration tests passed.");
