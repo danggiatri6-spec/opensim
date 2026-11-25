@@ -92,7 +92,8 @@ internal static class Program
             return 5;
         }
 
-        using IPhysicsWorldAdapter adapter = new FakePhysicsWorldAdapter();
+        await using var runtime = new WorkerSimulationRuntime(new FakePhysicsWorldAdapter());
+        runtime.SetWorldId(hello.WorldId);
         await WriteResponseAsync(stream, hello, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }));
 
         long lastSequence = 1;
@@ -120,7 +121,8 @@ internal static class Program
 
             if (request.Operation == "Ping")
             {
-                await WriteResponseAsync(stream, request, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }));
+                JsonElement health = await runtime.ExecuteAsync("GetHealth", JsonSerializer.SerializeToElement(new { }));
+                await WriteResponseAsync(stream, request, true, null, health);
                 continue;
             }
 
@@ -132,18 +134,7 @@ internal static class Program
 
             try
             {
-                JsonElement result = request.Operation switch
-                {
-                    "CreateWorld" => adapter.CreateWorld(hello.WorldId, request.Payload),
-                    "CreateBody" => adapter.CreateBody(request.Payload),
-                    "SetVelocity" => adapter.SetVelocity(request.Payload),
-                    "ApplyImpulse" => adapter.ApplyImpulse(request.Payload),
-                    "Step" => adapter.Step(request.Payload),
-                    "GetSnapshot" => adapter.GetSnapshot(),
-                    "DestroyBody" => adapter.DestroyBody(request.Payload),
-                    "StopWorld" => adapter.StopWorld(),
-                    _ => throw new WorkerCommandException(WorkerErrorCode.UnsupportedOperation, "Operation is not supported by this worker.")
-                };
+                JsonElement result = await runtime.ExecuteAsync(request.Operation!, request.Payload);
                 await WriteResponseAsync(stream, request, true, null, result);
             }
             catch (WorkerCommandException ex)
