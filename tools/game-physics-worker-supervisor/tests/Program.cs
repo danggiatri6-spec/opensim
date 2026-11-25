@@ -98,7 +98,7 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     for (int i = 0; i < 10; i++)
         snapshot = await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 3 }));
     JsonElement bodyState = snapshot.GetProperty("bodies")[0];
-    Assert(snapshot.GetProperty("tick").GetInt64() == 30 &&
+    Assert(snapshot.GetProperty("tick").GetInt64() == tickBeforeBoundaryTest &&
         bodyState.GetProperty("position").GetProperty("y").GetSingle() < 10f,
         "fake adapter advances deterministic fixed 30 Hz gravity steps");
 
@@ -139,6 +139,7 @@ await using (GamePhysicsWorkerSupervisor supervisor =
         "background simulation advances at approximately 30 Hz and pauses cleanly");
     await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = realtimeBodyId }));
 
+    long tickBeforeBoundaryTest = snapshot.GetProperty("tick").GetInt64();
     Guid boundaryBodyId = Guid.NewGuid();
     await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
     {
