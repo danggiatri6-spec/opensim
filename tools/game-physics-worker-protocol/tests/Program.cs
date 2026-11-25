@@ -108,12 +108,20 @@ using (var stream = new MemoryStream(Frame(Encoding.UTF8.GetBytes("{bad"))))
     Assert(rejected, "invalid JSON payload is rejected");
 }
 
-using (var stream = new MemoryStream(Frame(json[..^2])))
+using (var stream = new MemoryStream(new byte[] { 0, 0, 0, 8, (byte)'{', (byte)'}' }))
+{
+    bool rejected = false;
+    try { using JsonDocument? _ = await WorkerFrameCodec.ReadAsync(stream, 1024); }
+    catch (EndOfStreamException) { rejected = true; }
+    Assert(rejected, "truncated frame payload is rejected");
+}
+
+using (var stream = new MemoryStream(new byte[] { 0, 0, 0, 0 }))
 {
     bool rejected = false;
     try { using JsonDocument? _ = await WorkerFrameCodec.ReadAsync(stream, 1024); }
     catch (InvalidDataException) { rejected = true; }
-    Assert(rejected, "truncated JSON payload is rejected");
+    Assert(rejected, "zero-length frame is rejected");
 }
 
 using (var stream = new MemoryStream())
