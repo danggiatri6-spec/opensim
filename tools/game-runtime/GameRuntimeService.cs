@@ -229,7 +229,8 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 await record.Worker.StopAsync(cancellationToken).ConfigureAwait(false);
                 record.Snapshot.State = GameInstanceState.Stopped;
                 record.Snapshot.StoppedUTC = DateTime.UtcNow;
-                return Success(record.Snapshot);
+                await ReleaseReservationAsync(record).ConfigureAwait(false);
+                return Success(Clone(record.Snapshot));
             }
             catch
             {
@@ -249,7 +250,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
         InstanceRecord? record = FindOwned(authenticatedOwnerID, instanceID);
         return Task.FromResult(record is null
             ? Failure(GameInstanceError.NotFound, "Game Instance was not found.")
-            : Success(record.Snapshot));
+            : Success(Clone(record.Snapshot)));
     }
 
     public Task<List<GameInstance>> GetOwnedInstancesAsync(
@@ -260,7 +261,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
         offset = Math.Max(0, offset);
         limit = Math.Clamp(limit, 1, 100);
         List<GameInstance> result = _instances.Values
-            .Select(x => x.Snapshot)
+            .Select(x => Clone(x.Snapshot))
             .Where(x => x.OwnerID == authenticatedOwnerID)
             .OrderByDescending(x => x.CreatedUTC)
             .Skip(offset).Take(limit).ToList();
@@ -288,11 +289,24 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                         }
                     }
                     finally { record.Gate.Release(); }
+                    await ReleaseReservationAsync(record).ConfigureAwait(false);
                     return;
                 }
             }
         }
         catch { /* Monitoring must not take down the host or another instance. */ }
+    }
+
+    private async Task ReleaseReservationAsync(InstanceRecord record)
+    {
+        string key = record.Snapshot.OwnerID + ":" + record.Snapshot.ProjectID + ":" + record.Snapshot.ProjectRevision;
+        await _registryLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (_reservations.TryGetValue(key, out UUID id) && id == record.Snapshot.InstanceID)
+                _reservations.Remove(key);
+        }
+        finally { _registryLock.Release(); }
     }
 
     private async Task RollbackStartAsync(InstanceRecord record, string reservationKey)
@@ -319,8 +333,23 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
         return record.Snapshot.OwnerID == owner ? record : null;
     }
 
+    private static GameInstance Clone(GameInstance source) => new()
+    {
+        InstanceID = source.InstanceID,
+        OwnerID = source.OwnerID,
+        ProjectID = source.ProjectID,
+        ProjectRevision = source.ProjectRevision,
+        WorldID = source.WorldID,
+        State = source.State,
+        CreatedUTC = source.CreatedUTC,
+        StartedUTC = source.StartedUTC,
+        StoppedUTC = source.StoppedUTC,
+        LastErrorCode = source.LastErrorCode,
+        LastErrorMessage = source.LastErrorMessage
+    };
+
     private static GameInstanceResult Success(GameInstance instance) =>
-        new() { Error = GameInstanceError.None, Instance = instance };
+        new() { Error = GameInstanceError.None, Instance = Clone(instance) };
     private static GameInstanceResult Failure(GameInstanceError error, string message) =>
         new() { Error = error, Message = message };
 
