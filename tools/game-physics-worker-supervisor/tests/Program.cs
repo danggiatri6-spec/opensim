@@ -282,6 +282,43 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     Assert(supervisor.State == WorkerLifecycleState.Faulted, "supervisor detects unexpected worker process exit");
 }
 
+await using (GamePhysicsWorkerSupervisor workerA =
+    await GamePhysicsWorkerSupervisor.StartAsync(Options()))
+await using (GamePhysicsWorkerSupervisor workerB =
+    await GamePhysicsWorkerSupervisor.StartAsync(Options()))
+{
+    await workerA.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Lightweight" }));
+    await workerB.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Advanced" }));
+    await workerB.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = Guid.NewGuid(), mass = 1f, shape = "Sphere",
+        position = new { x = 0f, y = 50f, z = 0f }
+    }));
+    await workerB.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
+    int workerAPid = workerA.ProcessId;
+    using Process workerAProcess = Process.GetProcessById(workerAPid);
+    workerAProcess.Kill(entireProcessTree: true);
+    await workerA.WaitForFaultAsync(TimeSpan.FromSeconds(8));
+    Assert(workerA.State == WorkerLifecycleState.Faulted,
+        "worker A crash during active simulation is isolated and reported as Faulted");
+    await workerB.CheckHealthAsync();
+    JsonElement workerBSnapshot = await workerB.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+    Assert(workerB.State == WorkerLifecycleState.Ready &&
+        workerBSnapshot.GetProperty("tick").GetInt64() > 0,
+        "worker B remains healthy and continues its independent simulation after worker A crashes");
+}
+
+for (int cycle = 0; cycle < 5; cycle++)
+{
+    GamePhysicsWorkerSupervisor repeated = await GamePhysicsWorkerSupervisor.StartAsync(Options());
+    int repeatedPid = repeated.ProcessId;
+    using Process repeatedProcess = Process.GetProcessById(repeatedPid);
+    await repeated.StopAsync();
+    Assert(repeated.State == WorkerLifecycleState.Stopped && repeatedProcess.HasExited,
+        $"repeated worker lifecycle cycle {cycle + 1} exits its child process cleanly");
+    await repeated.DisposeAsync();
+}
+
 var failingRuntime = new WorkerSimulationRuntime(new ThrowingStepAdapter());
 await failingRuntime.ExecuteAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Balanced" }));
 await failingRuntime.ExecuteAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
