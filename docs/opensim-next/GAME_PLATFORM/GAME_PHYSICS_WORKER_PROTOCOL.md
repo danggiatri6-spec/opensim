@@ -372,9 +372,21 @@ W1 process and IPC prototype acceptance is complete: both local IPC transports p
 The current fake adapter is a deterministic protocol/lifecycle test backend. It is not a production collision engine, does not run a real-time simulation thread, and does not yet implement contact generation, constraints, triggers, or snapshots on a timer. Those belong to later W3 work.
 
 ### W3 — One-world simulation
-- Create one world, add/remove bodies, step at fixed rate, emit collision events and snapshots.
-- Test resource ceilings and queue backpressure.
-- Verify graceful stop joins all worker-owned threads before backend teardown.
+
+W3-A implementation in progress:
+- [x] Add a single-owner background simulation loop; all adapter calls are serialized on that loop.
+- [x] Add a bounded 4,096-command queue with explicit `QueueFull` rejection.
+- [x] Add fixed 30 Hz stepping with `StartSimulation` / `PauseSimulation` lifecycle commands.
+- [x] Keep manual `Step` as a deterministic test hook available only while paused.
+- [x] Route worker physics commands through the simulation owner instead of calling the adapter from the IPC reader.
+- [x] Add an integration assertion that the background world advances and pauses.
+- [ ] Publish snapshots through a bounded/coalescing asynchronous event channel at no more than 15 Hz.
+- [ ] Add a single worker writer for both responses and asynchronous events; no concurrent frame writes.
+- [ ] Add a supervisor single-reader loop, pending-request correlation, and a bounded event receive API.
+- [ ] Add contact begin/end and trigger events after the event transport is in place.
+- [ ] Test queue saturation, event ordering/overflow, snapshot coalescing, and thread-join teardown.
+
+The first W3 increment deliberately keeps the current request/response stream synchronous while establishing the worker's backend thread-ownership boundary. Duplex events and snapshot delivery are a separate W3-B increment; no claim of event delivery is made yet.
 
 ### W4 — Failure containment
 - Kill the worker during stepping and during teardown.
