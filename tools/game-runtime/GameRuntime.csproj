@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="OpenSim.Services.Interfaces">
+      <HintPath>../../bin/OpenSim.Services.Interfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenMetaverseTypes">
+      <HintPath>../../bin/OpenMetaverseTypes.dll</HintPath>
+    </Reference>
+    <ProjectReference Include="../game-physics-worker-supervisor/GamePhysicsWorker.Supervisor.csproj" />
+  </ItemGroup>
+</Project>
