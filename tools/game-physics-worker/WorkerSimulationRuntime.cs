@@ -185,6 +185,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
                 "GetHealth" => GetHealth(),
                 _ => throw new WorkerCommandException(WorkerErrorCode.UnsupportedOperation, "Operation is not supported by this worker.")
             };
+            PublishAdapterEvents();
             item.Completion.TrySetResult(result);
         }
         catch (Exception ex)
