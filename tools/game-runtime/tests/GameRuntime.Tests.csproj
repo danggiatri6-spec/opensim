@@ -6,6 +6,12 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="OpenSim.Services.Interfaces">
+      <HintPath>../../../bin/OpenSim.Services.Interfaces.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenMetaverseTypes">
+      <HintPath>../../../bin/OpenMetaverseTypes.dll</HintPath>
+    </Reference>
     <ProjectReference Include="../GameRuntime.csproj" />
   </ItemGroup>
 </Project>
