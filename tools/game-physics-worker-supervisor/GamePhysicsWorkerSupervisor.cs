@@ -231,6 +231,16 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             _lifetime.Cancel();
             if (_heartbeatTask is not null) { try { await _heartbeatTask.ConfigureAwait(false); } catch { } }
             TryKill();
+            try
+            {
+                await _process.WaitForExitAsync(cancellationToken)
+                    .WaitAsync(_options.ShutdownTimeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                TryKill();
+                try { await _process.WaitForExitAsync().WaitAsync(_options.ShutdownTimeout).ConfigureAwait(false); } catch { }
+            }
             await CleanupTransportAsync().ConfigureAwait(false);
             return;
         }
@@ -491,10 +501,14 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
-        if (State is not (WorkerLifecycleState.Stopped or WorkerLifecycleState.Faulted))
+        if (State != WorkerLifecycleState.Stopped)
         {
             try { await StopAsync().ConfigureAwait(false); }
-            catch { TryKill(); }
+            catch
+            {
+                TryKill();
+                try { await _process.WaitForExitAsync().WaitAsync(_options.ShutdownTimeout).ConfigureAwait(false); } catch { }
+            }
         }
         _heartbeatStop.Cancel();
         _lifetime.Cancel();
