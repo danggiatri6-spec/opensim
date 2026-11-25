@@ -10,7 +10,7 @@ namespace OpenSim.GameRuntime;
 /// service plugin. Disabled is the default and does not initialize project storage
 /// or launch any Worker processes.
 /// </summary>
-public sealed class GameRuntimeServicePlugin : IGameRuntimeService, IAsyncDisposable
+public sealed class GameRuntimeServicePlugin : IGameRuntimeService, IAsyncDisposable, IDisposable
 {
     private readonly GameRuntimeService? _runtime;
 
@@ -83,4 +83,6 @@ public sealed class GameRuntimeServicePlugin : IGameRuntimeService, IAsyncDispos
     }
 
     public ValueTask DisposeAsync() => _runtime?.DisposeAsync() ?? ValueTask.CompletedTask;
+
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 }
