@@ -380,13 +380,14 @@ W3-A implementation in progress:
 - [x] Keep manual `Step` as a deterministic test hook available only while paused.
 - [x] Route worker physics commands through the simulation owner instead of calling the adapter from the IPC reader.
 - [x] Add an integration assertion that the background world advances and pauses.
-- [ ] Publish snapshots through a bounded/coalescing asynchronous event channel at no more than 15 Hz.
-- [ ] Add a single worker writer for both responses and asynchronous events; no concurrent frame writes.
-- [ ] Add a supervisor single-reader loop, pending-request correlation, and a bounded event receive API.
-- [ ] Add contact begin/end and trigger events after the event transport is in place.
-- [ ] Test queue saturation, event ordering/overflow, snapshot coalescing, and thread-join teardown.
+- [x] Publish latest-state snapshots through a bounded/coalescing asynchronous channel at no more than 15 Hz.
+- [x] Add a single worker writer lock for responses and asynchronous snapshot events; frames cannot interleave.
+- [x] Add a supervisor single-reader loop, request-ID/sequence correlation, and an asynchronous event receive API.
+- [x] Coalesce stale snapshots in both worker and supervisor queues rather than accumulating obsolete world states.
+- [ ] Add contact begin/end and trigger events after the snapshot transport is stable.
+- [ ] Test queue saturation, critical-event overflow, event ordering under concurrent requests, and thread-join teardown.
 
-The first W3 increment deliberately keeps the current request/response stream synchronous while establishing the worker's backend thread-ownership boundary. Duplex events and snapshot delivery are a separate W3-B increment; no claim of event delivery is made yet.
+W3-B snapshot transport is implemented. The current event stream carries snapshots only; contact and trigger events are deliberately not represented as droppable snapshots and remain a separate follow-up. Critical-event overflow policy must be tested before those event types are enabled.
 
 ### W4 — Failure containment
 - Kill the worker during stepping and during teardown.
