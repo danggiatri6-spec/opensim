@@ -259,8 +259,8 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
         linked.CancelAfter(_options.RequestTimeout);
-        WorkerProtocolEnvelope request;
-        PendingRequest pending;
+        WorkerProtocolEnvelope? request = null;
+        PendingRequest? pending = null;
 
         await _writeLock.WaitAsync(linked.Token).ConfigureAwait(false);
         try
@@ -295,13 +295,13 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
         try
         {
-            return await pending.Completion.Task.WaitAsync(linked.Token).ConfigureAwait(false);
+            return await pending!.Completion.Task.WaitAsync(linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
             throw new TimeoutException($"Worker request '{operation}' exceeded its deadline.");
         }
-        finally { _pending.TryRemove(request.RequestId!.Value, out _); }
+        finally { _pending.TryRemove(request!.RequestId!.Value, out _); }
     }
 
     private async Task<JsonDocument> ExchangeHandshakeAsync(
