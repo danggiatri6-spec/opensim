@@ -1,6 +1,6 @@
 # Game Physics Worker Protocol
 
-Status: Architecture specification / implementation not yet started  
+Status: W0 protocol implementation verified; W1 echo worker prototype implemented with Linux IPC integration test; OpenSim host supervisor integration and Windows runtime verification remain open  
 Target branch: `opensim-next-dev`  
 Date: 2026-11-25
 
@@ -338,10 +338,18 @@ Do not include creator secrets, user tokens, or arbitrary asset contents in tele
 - No physics backend integration.
 
 ### W1 — Process supervisor and echo worker
-- Launch and stop a child process through local IPC.
-- Authenticate handshake and enforce one host connection.
-- Test startup timeout, worker crash, malformed messages, host shutdown, and forced termination.
-- Verify no public TCP listener is opened.
+- [x] Add a standalone .NET 8 worker executable with no Region, Scene, or physics-engine dependency.
+- [x] Implement Windows named-pipe client transport with current-user-only pipe access.
+- [x] Implement Unix-domain-socket client transport; the host-side test creates the socket in an owner-only private directory.
+- [x] Authenticate the first Hello request with a per-launch 256-bit capability token delivered through redirected standard input, never command-line arguments or logs; compare decoded token bytes in constant time.
+- [x] Validate world identity and strictly increasing host command sequence; implement Echo and graceful Shutdown.
+- [x] Add Linux integration coverage for authenticated handshake, framed Echo round-trip, graceful process exit, and forced child termination.
+- [ ] Integrate the supervisor into the OpenSim Game Runtime; current integration runner is a standalone host harness.
+- [ ] Run the named-pipe integration suite on a Windows CI runner.
+- [ ] Add explicit startup/handshake timeout, malformed-message, duplicate-connection, and crash-detection tests.
+- [ ] Verify no public TCP listener is opened by the worker process.
+
+W1 is therefore an initial executable/IPC prototype, not yet accepted as complete. The current GitHub Actions Linux run verifies the Unix-domain-socket path; Windows named-pipe behavior is implemented but not yet runtime-verified.
 
 ### W2 — Backend adapter prototype
 - Introduce a narrow `IPhysicsWorldAdapter` contract inside the worker process.
