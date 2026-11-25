@@ -358,10 +358,18 @@ Do not include creator secrets, user tokens, or arbitrary asset contents in tele
 W1 process and IPC prototype acceptance is complete: both local IPC transports pass CI (Linux Unix-domain sockets and Windows named pipes); the supervisor enforces request ordering, deadlines, health checks, graceful shutdown, and child-process exit monitoring; negative token and sequence tests pass. The supervisor remains a standalone host library at this stage. Wiring it into the OpenSim Game Runtime is intentionally deferred to W6, when the Game Runtime lifecycle exists.
 
 ### W2 — Backend adapter prototype
-- Introduce a narrow `IPhysicsWorldAdapter` contract inside the worker process.
-- Start with a fake deterministic adapter to test protocol and lifecycle without native dependencies.
-- Then test BulletS unmanaged backend only inside the worker.
+- [x] Introduce a narrow `IPhysicsWorldAdapter` contract inside the worker process.
+- [x] Add a deterministic fake adapter with one-world-per-process ownership.
+- [x] Implement bounded `CreateWorld`, `CreateBody`, `SetVelocity`, `ApplyImpulse`, `Step`, `GetSnapshot`, `DestroyBody`, and `StopWorld` commands.
+- [x] Use fixed 1/30-second manual steps, bounded catch-up of at most three steps per command, default gravity, and finite world/velocity bounds.
+- [x] Enforce the Balanced starting body cap (128 dynamic bodies) and a separate total body ceiling (384 including static bodies).
+- [x] Test gravity integration, mass-scaled impulse, body lifecycle, and rejection of a second world in one worker process.
+- [ ] Add more negative tests for invalid shapes, mass, body limits, and world bounds.
+- [ ] Add collision/contact and trigger semantics only after the adapter boundary and lifecycle are stable.
+- [ ] Test the BulletS unmanaged backend only inside the worker, after native lifecycle audit gates pass.
 - Never pass backend types across the IPC boundary.
+
+The current fake adapter is a deterministic protocol/lifecycle test backend. It is not a production collision engine, does not run a real-time simulation thread, and does not yet implement contact generation, constraints, triggers, or snapshots on a timer. Those belong to later W3 work.
 
 ### W3 — One-world simulation
 - Create one world, add/remove bodies, step at fixed rate, emit collision events and snapshots.
