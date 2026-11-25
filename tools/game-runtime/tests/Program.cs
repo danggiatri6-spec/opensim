@@ -15,6 +15,13 @@ UUID projectId = UUID.Random();
 UUID worldId = UUID.Random();
 var projects = new FakeProjectService(owner, projectId, worldId);
 var workers = new FakeWorkerFactory();
+await using (var disabledRuntime = new GameRuntimeService(projects, new FakeWorkerFactory(), new GameRuntimeOptions()))
+{
+    GameInstanceResult disabledStart = await disabledRuntime.StartInstanceAsync(owner, projectId, 1);
+    Assert(disabledStart.Error == GameInstanceError.WorkerUnavailable,
+        "Game Runtime remains disabled by default without requiring a worker deployment path");
+}
+
 var options = new GameRuntimeOptions
 {
     Enabled = true,
