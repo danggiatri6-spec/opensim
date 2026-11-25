@@ -69,7 +69,7 @@ public sealed class WorkerProtocolEnvelope
     public string? Operation { get; set; }
     public bool? Ok { get; set; }
     public WorkerErrorCode? Error { get; set; }
-    public JsonElement Payload { get; set; }
+    public JsonElement Payload { get; set; } = JsonDocument.Parse("{}").RootElement.Clone();
 }
 
 public static class WorkerProtocolValidator
