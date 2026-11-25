@@ -13,50 +13,56 @@ Target repository: `danggiatri6-spec/opensim`
 
 2. `OpenSim/Data/IGameProjectData.cs`
    - Persistent storage records for project metadata and immutable revisions.
-   - `IGameProjectData` provider contract.
-   - Revision save contract explicitly requires an atomic compare-and-advance operation using the expected current revision.
+   - Provider contract requires atomic revision compare-and-save.
+   - Metadata update contract includes both expected manifest revision and expected update timestamp for compare-and-swap.
 
 3. `OpenSim/Data/SQLite/SQLiteGameProjectData.cs` and `OpenSim/Data/SQLite/Resources/GameProjects.migrations`
    - SQLite schema for project metadata and immutable manifest revisions.
    - Parameterized CRUD, owner-scoped listing, archival and UTC timestamp persistence.
    - Revision writes use a serializable transaction, owner/status check and compare-and-advance guard.
-   - Provider opens a private connection per operation; it does not reuse the legacy SQLite static shared connection pattern.
+   - Metadata updates compare owner, revision and prior `UpdatedUTC`, preventing same-revision lost updates.
+   - Provider opens a private connection per operation.
 
 4. `OpenSim/Services/UserAccountService/GameProjectService.cs`
    - Implements `IGameProjectService` with creator-owner checks, draft-only mutation, bounded pagination, metadata validation and typed result errors.
    - Serializes manifests with a 2 MiB character limit and a UUID-as-string JSON converter.
    - Saves immutable revisions through the provider's atomic compare-and-advance operation.
-   - Loads `IGameProjectData` through the existing `ServiceBase.LoadPlugin` pattern. The `GameProjectService` config section must provide `StorageProvider` and `ConnectionString` (or inherit them from `DatabaseService`).
-   - Provider failures are mapped to safe service results; no live Region or Scene is touched.
+   - Loads `IGameProjectData` through the existing `ServiceBase.LoadPlugin` pattern.
+   - No live Region or Scene is touched.
 
-5. `docs/opensim-next/GAME_PLATFORM/CREATOR_ECONOMY.md`
+5. `prebuild.xml`
+   - Explicitly includes root C# source files for `OpenSim.Services.Interfaces`.
+   - Explicitly includes root C# files and `Properties/*.cs` for `OpenSim.Services.UserAccountService`.
+
+6. `bin/config-include/storage/SQLiteStandalone.ini`
+   - Adds a `[GameProjectService]` configuration using `OpenSim.Data.SQLite.dll:SQLiteGameProjectData`.
+   - Reuses the standalone `OpenSim.db` connection, so the migration creates additive tables in the existing SQLite database.
+
+7. `docs/opensim-next/GAME_PLATFORM/CREATOR_ECONOMY.md`
    - Defines creator-controlled access pricing, offers, memberships and game-scoped virtual goods.
    - Defines creator-configurable quest, achievement, event and progression rewards.
    - Separates external payments, platform credit, game currency, entitlements and creator revenue.
    - This remains a design specification; no real-money payments, wallets, payouts or reward runtime have been implemented.
 
-## Build-system audit
+## Important integration boundary
 
-The active branch uses Prebuild to generate `OpenSim.sln`; the solution file is generated and is not tracked at repository root.
-
-The `OpenSim.Data` project explicitly includes root-level `*.cs` files, so `IGameProjectData.cs` is covered by its existing source inclusion rule.
-
-The `OpenSim.Services.Interfaces` Prebuild project has no explicit `<Files>` list. Confirm generated project inclusion during the first local Prebuild run before treating the new contracts as build-verified. The `OpenSim.Data.SQLite` project recursively includes C# files and embeds `Resources/*.migrations`, so the new provider and migration follow its existing inclusion rules. Confirm that the UserAccountService project includes the new service source during Prebuild.
+The configuration section and service class do not by themselves expose a public API. A trusted host module must instantiate `GameProjectService` and pass an owner UUID obtained from authenticated server-side identity. Do not accept `authenticatedOwnerID` from an untrusted Viewer request. HTTP/Capability endpoints and Creator UI are not yet implemented.
 
 ## Not yet implemented
 
-- A deployment configuration/example and runtime verification that the SQLite provider is loadable through the plugin loader.
-- Creator Economy runtime: offers, reward rules, game-scoped wallets, ledger, entitlements and reporting.
-- HTTP/Capability endpoints and authenticated Creator identity binding.
+- Trusted host/module wiring and authenticated Creator identity binding.
+- HTTP/Capability endpoints and Viewer Creator Mode.
 - Automated unit tests and a full Prebuild + .NET 8 build.
-- Viewer integration.
+- Creator Economy runtime: offers, reward rules, game-scoped wallets, ledger, entitlements and reporting.
+- Equivalent providers for other supported database backends.
 
 ## Required next implementation steps
 
-1. Add a sample `GameProjectService` configuration and verify the SQLite provider is loadable through the existing plugin loader.
-2. Add tests for SQLite migration, ownership isolation, revision conflicts, archival, validation and UUID/manifest serialization.
-3. Confirm Prebuild includes all new source files and run the complete .NET 8 build; record the actual result before proceeding.
-4. Add equivalent providers for other supported database backends where appropriate.
+1. Run Prebuild and verify the generated project files include the new interfaces and service.
+2. Run the complete .NET 8 build and fix any compile/API mismatches.
+3. Add tests for SQLite migration, ownership isolation, revision conflicts, metadata compare-and-swap, archival, validation and serialization.
+4. Add a trusted service host and authenticated endpoint layer; never trust a creator UUID supplied by the Viewer.
+5. Add other database providers where appropriate, then begin Viewer Creator Mode.
 
 ## Safety boundary
 
