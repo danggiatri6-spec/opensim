@@ -154,7 +154,7 @@ WHERE EXISTS (SELECT 1 FROM AiFriendCharacters WHERE CharacterID=@character AND 
                 {
                     return q.ExecuteNonQuery() == 1;
                 }
-                catch (SQLiteException ex) when (ex.ErrorCode == SQLiteErrorCode.Constraint)
+                catch (SQLiteException ex) when (ex.ErrorCode == (int)SQLiteErrorCode.Constraint)
                 {
                     // A duplicate user/character pair is an expected domain rejection,
                     // not an unhandled provider exception.
