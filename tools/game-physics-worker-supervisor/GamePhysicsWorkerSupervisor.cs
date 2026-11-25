@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Security.Cryptography;
