@@ -13,5 +13,6 @@
       <HintPath>../../../bin/OpenMetaverseTypes.dll</HintPath>
     </Reference>
     <ProjectReference Include="../GameRuntime.csproj" />
+    <ProjectReference Include="../../game-physics-worker/GamePhysicsWorker.csproj" />
   </ItemGroup>
 </Project>
