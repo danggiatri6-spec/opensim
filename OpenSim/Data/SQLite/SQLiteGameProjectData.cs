@@ -28,7 +28,6 @@ namespace OpenSim.Data.SQLite
             if (string.IsNullOrWhiteSpace(connectionString))
                 throw new ArgumentException("A database connection string is required.", nameof(connectionString));
 
-            DllmapConfigHelper.RegisterAssembly(typeof(SQLiteConnection).Assembly);
             _connectionString = connectionString;
             InitializeSchema();
         }
