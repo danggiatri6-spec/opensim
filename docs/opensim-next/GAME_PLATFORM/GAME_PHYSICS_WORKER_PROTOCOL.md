@@ -390,10 +390,10 @@ W3-A implementation in progress:
 - [x] Publish snapshots and critical events through one serialized worker writer with a shared monotonic event sequence.
 - [x] Merge events in the supervisor by event sequence while coalescing stale snapshots.
 - [x] Add integration tests for contact begin/end, trigger enter/exit, and asynchronous snapshot delivery.
-- [ ] Test critical-event queue saturation and explicit overflow fault propagation end-to-end.
+- [x] Test critical-event queue saturation and explicit overflow fault propagation end-to-end; overflow faults the isolated worker and is detected by the supervisor.
 - [ ] Test event ordering under concurrent host requests and thread-join teardown under injected backend failure.
 
-W3-B now transports both event classes. The fake adapter's overlap calculation is deliberately simplistic and is only an event-pipeline fixture; it does not resolve contacts and is not production physics.
+W3-B transports both event classes and passes Linux/Windows CI coverage for snapshots, contact/trigger transitions, explicit critical-event overflow, graceful shutdown, and worker crash detection. The fake adapter's overlap calculation is deliberately simplistic and is only an event-pipeline fixture; it does not resolve contacts and is not production physics.
 
 ### W4 — Failure containment
 - Kill the worker during stepping and during teardown.
