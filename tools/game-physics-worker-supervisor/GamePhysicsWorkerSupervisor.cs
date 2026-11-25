@@ -205,28 +205,31 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     {
         Task<bool>? snapshotWait = null;
         Task<bool>? physicsWait = null;
+        bool snapshotsCompleted = false;
+        bool physicsEventsCompleted = false;
         while (true)
         {
             if (_physicsEvents.Reader.TryRead(out JsonElement physicsEvent)) return physicsEvent;
             if (_snapshots.Reader.TryRead(out JsonElement snapshot)) return snapshot;
+            if (snapshotsCompleted && physicsEventsCompleted) throw new ChannelClosedException();
 
-            physicsWait ??= _physicsEvents.Reader.WaitToReadAsync(cancellationToken).AsTask();
-            snapshotWait ??= _snapshots.Reader.WaitToReadAsync(cancellationToken).AsTask();
-            await Task.WhenAny(physicsWait, snapshotWait).ConfigureAwait(false);
+            if (!physicsEventsCompleted)
+                physicsWait ??= _physicsEvents.Reader.WaitToReadAsync(cancellationToken).AsTask();
+            if (!snapshotsCompleted)
+                snapshotWait ??= _snapshots.Reader.WaitToReadAsync(cancellationToken).AsTask();
 
-            if (physicsWait.IsCompleted)
+            Task completed = physicsWait is null ? snapshotWait! :
+                snapshotWait is null ? physicsWait : await Task.WhenAny(physicsWait, snapshotWait).ConfigureAwait(false);
+
+            if (physicsWait is not null && physicsWait.IsCompleted)
             {
-                bool available = await physicsWait.ConfigureAwait(false);
+                physicsEventsCompleted = !await physicsWait.ConfigureAwait(false);
                 physicsWait = null;
-                if (!available && _snapshots.Reader.Completion.IsCompleted)
-                    throw new ChannelClosedException();
             }
-            if (snapshotWait.IsCompleted)
+            if (snapshotWait is not null && snapshotWait.IsCompleted)
             {
-                bool available = await snapshotWait.ConfigureAwait(false);
+                snapshotsCompleted = !await snapshotWait.ConfigureAwait(false);
                 snapshotWait = null;
-                if (!available && _physicsEvents.Reader.Completion.IsCompleted)
-                    throw new ChannelClosedException();
             }
         }
     }
