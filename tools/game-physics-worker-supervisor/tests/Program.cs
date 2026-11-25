@@ -123,6 +123,13 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     }));
     JsonElement started = await supervisor.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
     Assert(started.GetProperty("state").GetString() == "Running", "worker starts the background fixed-step simulation");
+    Task<JsonElement>[] concurrentDuringSimulation = Enumerable.Range(0, 12)
+        .Select(i => supervisor.EchoAsync(JsonSerializer.SerializeToElement(new { liveIndex = i })))
+        .ToArray();
+    JsonElement[] liveEchoResults = await Task.WhenAll(concurrentDuringSimulation);
+    Assert(liveEchoResults.Select(x => x.GetProperty("liveIndex").GetInt32()).OrderBy(x => x)
+        .SequenceEqual(Enumerable.Range(0, 12)),
+        "concurrent host requests remain correlated while asynchronous physics events are being published");
     JsonElement firstSnapshotEvent = await supervisor.ReadEventAsync()
         .AsTask().WaitAsync(TimeSpan.FromSeconds(3));
     Assert(firstSnapshotEvent.GetProperty("type").GetString() == "Snapshot" &&
