@@ -104,6 +104,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         start.ArgumentList.Add(endpoint);
 
         Process? process = null;
+        Stream? connectedStream = null;
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException("Worker process did not start.");
@@ -123,6 +124,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
                 Socket socket = await listener!.AcceptAsync(startupCts.Token).ConfigureAwait(false);
                 stream = new NetworkStream(socket, ownsSocket: true);
             }
+            connectedStream = stream;
 
             var supervisor = new GamePhysicsWorkerSupervisor(options, process, stream, privateDirectory, listener, pipe);
             var hello = new WorkerProtocolEnvelope
@@ -148,7 +150,15 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         {
             CryptographicOperations.ZeroMemory(token);
             try { if (process is not null && !process.HasExited) process.Kill(entireProcessTree: true); } catch { }
-            process?.Dispose();
+            if (connectedStream is not null)
+            {
+                try { await connectedStream.DisposeAsync().ConfigureAwait(false); } catch { }
+            }
+            if (process is not null)
+            {
+                try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false); } catch { }
+                process.Dispose();
+            }
             pipe?.Dispose();
             listener?.Dispose();
             if (privateDirectory is not null && Directory.Exists(privateDirectory))
