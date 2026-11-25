@@ -135,8 +135,8 @@ No W6 gate is considered complete merely because the standalone Worker tests pas
 - [x] Typed start failures and startup rollback.
 - [x] Service-level tests for ownership, archived projects, malformed manifests, duplicate starts, stop/restart, worker faults, and startup rollback.
 - [x] Linux and Windows CI for the existing service-level test runner.
-- [ ] Real child-process acceptance test: authenticated launch, world creation, simulation start, graceful stop, and process reap.
+- [x] Real child-process acceptance test: authenticated launch, world creation, simulation start, graceful stop, and process reap (Linux CI).
 - [ ] OpenSim service configuration/registry integration and deployment packaging.
 - [ ] Fault-stop cleanup and host-shutdown acceptance tests.
 
-The standalone runtime assembly is intentionally not yet registered as a default OpenSim service. It remains disabled unless explicitly constructed with `GameRuntimeOptions.Enabled = true`; service registration follows after deployment paths and shutdown ownership are proven.
+The real-process acceptance runner uses the production Worker executable and Supervisor over the platform IPC transport. Linux child-process lifecycle passed; Windows Named Pipes supervisor tests also passed. The standalone runtime assembly is intentionally not yet registered as a default OpenSim service. It remains disabled unless explicitly constructed with `GameRuntimeOptions.Enabled = true`; service registration follows after deployment paths and shutdown ownership are proven.
