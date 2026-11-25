@@ -146,11 +146,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
                 ? reportedTick
                 : TickCount + 1;
             Interlocked.Exchange(ref _tickCount, currentTick);
-            foreach (JsonElement physicsEvent in _adapter.DrainEvents())
-            {
-                if (!_physicsEvents.Writer.TryWrite(physicsEvent.Clone()))
-                    throw new WorkerCommandException(WorkerErrorCode.QueueFull, "Critical physics event queue overflowed; event delivery cannot be guaranteed.");
-            }
+            PublishAdapterEvents();
             if (TickCount - _lastSnapshotTick >= 2)
             {
                 _lastSnapshotTick = TickCount;
@@ -203,7 +199,22 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
         JsonElement snapshot = _adapter.Step(payload);
         if (snapshot.TryGetProperty("tick", out JsonElement tickValue) && tickValue.TryGetInt64(out long reportedTick))
             Interlocked.Exchange(ref _tickCount, reportedTick);
+        PublishAdapterEvents();
         return snapshot;
+    }
+
+    private void PublishAdapterEvents()
+    {
+        foreach (JsonElement physicsEvent in _adapter.DrainEvents())
+        {
+            if (!_physicsEvents.Writer.TryWrite(physicsEvent.Clone()))
+            {
+                _faulted = true;
+                _running = false;
+                throw new WorkerCommandException(WorkerErrorCode.EventOverflow,
+                    "Critical physics event queue overflowed; event delivery cannot be guaranteed.");
+            }
+        }
     }
 
     private JsonElement StartSimulation()
