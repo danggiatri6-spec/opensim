@@ -28,6 +28,12 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     Assert(supervisor.State == WorkerLifecycleState.Ready, "supervisor reaches Ready after authenticated startup");
     JsonElement echo = await supervisor.EchoAsync(JsonSerializer.SerializeToElement(new { message = "host-supervisor", value = 42 }));
     Assert(echo.GetProperty("message").GetString() == "host-supervisor", "supervisor correlates and returns Echo response");
+    Task<JsonElement>[] concurrent = Enumerable.Range(0, 12)
+        .Select(i => supervisor.EchoAsync(JsonSerializer.SerializeToElement(new { index = i })))
+        .ToArray();
+    JsonElement[] concurrentResults = await Task.WhenAll(concurrent);
+    Assert(concurrentResults.Select(x => x.GetProperty("index").GetInt32()).Order().SequenceEqual(Enumerable.Range(0, 12)),
+        "concurrent host requests preserve strict wire sequence ordering");
     await supervisor.CheckHealthAsync();
     Assert(true, "supervisor completes worker health ping");
     await supervisor.StopAsync();
