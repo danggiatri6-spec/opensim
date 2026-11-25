@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.SQLite;
 using System.Globalization;
 using OpenSim.Framework;
+using OpenSim.Data;
 
 namespace OpenSim.Data.SQLite
 {
