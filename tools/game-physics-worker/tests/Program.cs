@@ -12,7 +12,7 @@ static void Assert(bool condition, string message)
     Console.WriteLine("PASS " + message);
 }
 
-static byte[] JsonBytes(WorkerProtocolEnvelope envelope) => JsonSerializer.SerializeToUtf8Bytes(envelope);
+static byte[] JsonBytes(WorkerProtocolEnvelope envelope) => JsonSerializer.SerializeToUtf8Bytes(envelope, JsonSerializerOptions.Web);
 
 static async Task<JsonDocument?> SendAsync(Stream stream, WorkerProtocolEnvelope request)
 {
