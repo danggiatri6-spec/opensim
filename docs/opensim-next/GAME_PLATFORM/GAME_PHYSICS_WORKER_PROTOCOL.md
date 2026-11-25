@@ -396,10 +396,10 @@ W3-A implementation in progress:
 W3-A and W3-B acceptance tests pass on Linux and Windows CI. Coverage includes snapshots, contact/trigger transitions, explicit critical-event overflow, event ordering during concurrent host requests, graceful shutdown, worker crash detection, and simulation-thread join after an injected backend failure. The fake adapter's overlap calculation is deliberately simplistic and is only an event-pipeline fixture; it does not resolve contacts and is not production physics.
 
 ### W4 — Failure containment
-- [ ] Kill the worker during active stepping and verify the supervisor marks it Faulted.
-- [ ] Verify a second independent worker remains healthy and continues stepping after the first worker crashes.
-- [ ] Verify repeated create/stop cycles exit every child process cleanly.
-- [ ] Exercise startup and shutdown timeout cleanup, including endpoint removal, before production integration.
+- [x] Kill worker A during active stepping and verify the supervisor marks it Faulted (Linux and Windows CI run `45558227141`).
+- [x] Verify independent worker B remains healthy and continues stepping after worker A crashes (CI run `45558227141`).
+- [x] Verify five repeated create/stop cycles exit every child process cleanly (CI run `45558227141`).
+- [ ] Exercise startup failure and cancelled-shutdown cleanup, including endpoint removal (new tests added; CI run `45579318423` pending).
 - [ ] Verify no stale worker messages are applied after replacement.
 
 ### W5 — Two-instance isolation
