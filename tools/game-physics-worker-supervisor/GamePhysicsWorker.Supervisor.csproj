@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../game-physics-worker-protocol/GamePhysicsWorker.Protocol.csproj" />
   </ItemGroup>
 </Project>
