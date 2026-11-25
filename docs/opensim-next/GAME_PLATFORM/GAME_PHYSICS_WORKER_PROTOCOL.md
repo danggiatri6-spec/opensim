@@ -406,13 +406,15 @@ W4 failure-containment tests pass on Linux and Windows CI (`45558227141`, `45579
 
 ### W5 — Two-instance isolation
 - [x] Run two separate worker processes with different worlds and profiles; both advance concurrently (Linux and Windows CI run `45579604976`).
-- [ ] Destroy or crash worker A while worker B continues stepping and publishing snapshots (continued stepping verified in `45558227141`; asynchronous snapshot assertion added for next CI run).
+- [x] Destroy or crash worker A while worker B continues stepping and publishing asynchronous snapshots; verify both workers publish snapshots concurrently (Linux and Windows CI run `45579969876`).
 - [x] Capture initial startup, working-set delta, and CPU-time measurements on Linux and Windows CI (`45579604976`).
-- Do not optimize toward multiple worlds per process until this gate passes.
+- Retain one worker process per Game Instance; the fake-adapter W5 result does not supersede the BulletS/ODE native backend isolation gates.
 
-Initial CI-only baseline (two workers, 16 dynamic bodies each, 2-second observation; not a production capacity target):
-- Windows: startup 158.9/158.8 ms; working-set delta +6.6/+6.8 MiB; CPU-time delta 406/406 ms.
-- Linux: startup 191.5/218.0 ms; working-set delta +7.6/+6.5 MiB; CPU-time delta 600/470 ms.
+Latest CI-only baseline (two workers, 16 dynamic bodies each, 2-second observation; not a production capacity target; run `45579969876`):
+- Windows: startup 173.2/185.9 ms; working-set delta +7.0/+6.9 MiB; CPU-time delta 484/391 ms.
+- Linux: startup 100.8/95.1 ms; working-set delta +6.6/+6.5 MiB; CPU-time delta 370/360 ms.
+
+W5 process-isolation and measurement checks pass on Linux and Windows. This validates the fake-adapter process boundary only; it does not authorize multiple physics worlds per process. Keep one worker per Game Instance pending native backend lifecycle and isolation audits.
 
 ### W6 — Game Runtime integration
 - Integrate the standalone Worker Supervisor into the OpenSim Game Runtime lifecycle.
