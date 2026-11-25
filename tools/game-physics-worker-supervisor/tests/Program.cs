@@ -32,8 +32,55 @@ await using (GamePhysicsWorkerSupervisor supervisor =
         .Select(i => supervisor.EchoAsync(JsonSerializer.SerializeToElement(new { index = i })))
         .ToArray();
     JsonElement[] concurrentResults = await Task.WhenAll(concurrent);
-    Assert(concurrentResults.Select(x => x.GetProperty("index").GetInt32()).Order().SequenceEqual(Enumerable.Range(0, 12)),
+    Assert(concurrentResults.Select(x => x.GetProperty("index").GetInt32()).OrderBy(x => x).SequenceEqual(Enumerable.Range(0, 12)),
         "concurrent host requests preserve strict wire sequence ordering");
+    JsonElement world = await supervisor.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new
+    {
+        profile = "Balanced",
+        gravity = new { x = 0f, y = -9.81f, z = 0f },
+        maxDynamicBodies = 4
+    }));
+    Assert(world.GetProperty("state").GetString() == "Created", "fake adapter creates one bounded physics world");
+
+    Guid bodyId = Guid.NewGuid();
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId, mass = 2f, shape = "Box", position = new { x = 0f, y = 10f, z = 0f }
+    }));
+    await supervisor.RequestAsync("SetVelocity", JsonSerializer.SerializeToElement(new
+    {
+        bodyId, velocity = new { x = 1f, y = 0f, z = 0f }
+    }));
+    JsonElement snapshot = default;
+    for (int i = 0; i < 10; i++)
+        snapshot = await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 3 }));
+    JsonElement bodyState = snapshot.GetProperty("bodies")[0];
+    Assert(snapshot.GetProperty("tick").GetInt64() == 30 &&
+        bodyState.GetProperty("position").GetProperty("y").GetSingle() < 10f,
+        "fake adapter advances deterministic fixed 30 Hz gravity steps");
+
+    await supervisor.RequestAsync("ApplyImpulse", JsonSerializer.SerializeToElement(new
+    {
+        bodyId, impulse = new { x = 2f, y = 0f, z = 0f }
+    }));
+    snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+    bodyState = snapshot.GetProperty("bodies")[0];
+    Assert(bodyState.GetProperty("velocity").GetProperty("x").GetSingle() > 1.9f,
+        "fake adapter applies mass-scaled impulses");
+
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId }));
+    snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+    Assert(snapshot.GetProperty("bodies").GetArrayLength() == 0, "fake adapter destroys bodies by opaque ID");
+
+    bool secondWorldRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Balanced" }));
+    }
+    catch (InvalidOperationException) { secondWorldRejected = true; }
+    Assert(secondWorldRejected, "worker rejects a second world in the same process");
+
+    await supervisor.RequestAsync("StopWorld", JsonSerializer.SerializeToElement(new { }));
     await supervisor.CheckHealthAsync();
     Assert(true, "supervisor completes worker health ping");
     await supervisor.StopAsync();
