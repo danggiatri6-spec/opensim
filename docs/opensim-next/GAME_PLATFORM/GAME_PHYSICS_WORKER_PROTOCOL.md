@@ -405,10 +405,14 @@ W3-A and W3-B acceptance tests pass on Linux and Windows CI. Coverage includes s
 W4 failure-containment tests pass on Linux and Windows CI (`45558227141`, `45579318423`): worker A can be killed during active simulation while worker B remains healthy and advances independently; five repeated start/stop cycles exit every child; startup failure and cancelled shutdown terminate/clean up the worker, with Unix private IPC directory cleanup verified. This is lifecycle and process-isolation evidence for the prototype, not yet proof of production OS resource quotas or native backend fault containment.
 
 ### W5 — Two-instance isolation
-- [ ] Run two separate worker processes with different worlds and profiles.
-- [ ] Destroy or crash worker A while worker B continues stepping and publishing snapshots.
-- [ ] Measure CPU/memory overhead and startup latency.
+- [x] Run two separate worker processes with different worlds and profiles; both advance concurrently (Linux and Windows CI run `45579604976`).
+- [ ] Destroy or crash worker A while worker B continues stepping and publishing snapshots (continued stepping verified in `45558227141`; asynchronous snapshot assertion added for next CI run).
+- [x] Capture initial startup, working-set delta, and CPU-time measurements on Linux and Windows CI (`45579604976`).
 - Do not optimize toward multiple worlds per process until this gate passes.
+
+Initial CI-only baseline (two workers, 16 dynamic bodies each, 2-second observation; not a production capacity target):
+- Windows: startup 158.9/158.8 ms; working-set delta +6.6/+6.8 MiB; CPU-time delta 406/406 ms.
+- Linux: startup 191.5/218.0 ms; working-set delta +7.6/+6.5 MiB; CPU-time delta 600/470 ms.
 
 ### W6 — Game Runtime integration
 - Integrate the standalone Worker Supervisor into the OpenSim Game Runtime lifecycle.
