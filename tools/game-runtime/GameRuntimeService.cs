@@ -231,6 +231,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 if (record.Worker is null) throw new InvalidOperationException("Worker session is missing.");
                 await record.Worker.StopWorldAsync(cancellationToken).ConfigureAwait(false);
                 await record.Worker.StopAsync(cancellationToken).ConfigureAwait(false);
+                await record.Worker.DisposeAsync().ConfigureAwait(false);
                 record.Snapshot.State = GameInstanceState.Stopped;
                 record.Snapshot.StoppedUTC = DateTime.UtcNow;
                 await ReleaseReservationAsync(record).ConfigureAwait(false);
@@ -241,6 +242,11 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 record.Snapshot.State = GameInstanceState.Faulted;
                 record.Snapshot.LastErrorCode = "WorkerStopFailed";
                 record.Snapshot.LastErrorMessage = "Worker did not complete a graceful stop.";
+                if (record.Worker is not null)
+                {
+                    try { await record.Worker.DisposeAsync().ConfigureAwait(false); } catch { }
+                }
+                await ReleaseReservationAsync(record).ConfigureAwait(false);
                 throw;
             }
         }
@@ -294,6 +300,10 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                     }
                     finally { record.Gate.Release(); }
                     await ReleaseReservationAsync(record).ConfigureAwait(false);
+                    if (record.Worker is not null)
+                    {
+                        try { await record.Worker.DisposeAsync().ConfigureAwait(false); } catch { }
+                    }
                     return;
                 }
             }
