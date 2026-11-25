@@ -177,6 +177,12 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             return;
         if (State == WorkerLifecycleState.Faulted)
         {
+            _heartbeatStop.Cancel();
+            _lifetime.Cancel();
+            if (_heartbeatTask is not null)
+            {
+                try { await _heartbeatTask.ConfigureAwait(false); } catch { }
+            }
             TryKill();
             await CleanupTransportAsync().ConfigureAwait(false);
             return;
@@ -230,6 +236,9 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (!allowStopping && State != WorkerLifecycleState.Ready)
+                throw new InvalidOperationException($"Worker is not ready (state: {State}).");
+
             long sequence = ++_sequence;
             var request = new WorkerProtocolEnvelope
             {
