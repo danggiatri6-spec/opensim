@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../game-physics-worker-protocol/GamePhysicsWorker.Protocol.csproj" />
+    <Compile Remove="tests/**/*.cs" />
   </ItemGroup>
 </Project>
