@@ -31,20 +31,12 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     private readonly NamedPipeServerStream? _pipeServer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, PendingRequest> _pending = new();
-    private readonly Channel<JsonElement> _snapshots = Channel.CreateBounded<JsonElement>(
-        new BoundedChannelOptions(1)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = false,
-            SingleWriter = true
-        });
-    private readonly Channel<JsonElement> _physicsEvents = Channel.CreateBounded<JsonElement>(
-        new BoundedChannelOptions(WorkerProtocolConstants.DefaultMaxQueuedEvents)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleReader = false,
-            SingleWriter = true
-        });
+    private readonly object _eventLock = new();
+    private readonly SortedDictionary<long, JsonElement> _pendingEvents = new();
+    private readonly SemaphoreSlim _eventSignal = new(0, 1);
+    private long _pendingSnapshotSequence;
+    private bool _eventsCompleted;
+    private const int MaxPendingEvents = WorkerProtocolConstants.DefaultMaxQueuedEvents;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly CancellationTokenSource _heartbeatStop = new();
     private readonly Task _exitMonitor;
@@ -203,34 +195,21 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
     public async ValueTask<JsonElement> ReadEventAsync(CancellationToken cancellationToken = default)
     {
-        Task<bool>? snapshotWait = null;
-        Task<bool>? physicsWait = null;
-        bool snapshotsCompleted = false;
-        bool physicsEventsCompleted = false;
         while (true)
         {
-            if (_physicsEvents.Reader.TryRead(out JsonElement physicsEvent)) return physicsEvent;
-            if (_snapshots.Reader.TryRead(out JsonElement snapshot)) return snapshot;
-            if (snapshotsCompleted && physicsEventsCompleted) throw new ChannelClosedException();
-
-            if (!physicsEventsCompleted)
-                physicsWait ??= _physicsEvents.Reader.WaitToReadAsync(cancellationToken).AsTask();
-            if (!snapshotsCompleted)
-                snapshotWait ??= _snapshots.Reader.WaitToReadAsync(cancellationToken).AsTask();
-
-            if (physicsWait is null) await snapshotWait!.ConfigureAwait(false);
-            else if (snapshotWait is null) await physicsWait.ConfigureAwait(false);
-            else await Task.WhenAny(physicsWait, snapshotWait).ConfigureAwait(false);
-
-            if (physicsWait is not null && physicsWait.IsCompleted)
+            await _eventSignal.WaitAsync(cancellationToken).ConfigureAwait(false);
+            lock (_eventLock)
             {
-                physicsEventsCompleted = !await physicsWait.ConfigureAwait(false);
-                physicsWait = null;
-            }
-            if (snapshotWait is not null && snapshotWait.IsCompleted)
-            {
-                snapshotsCompleted = !await snapshotWait.ConfigureAwait(false);
-                snapshotWait = null;
+                if (_pendingEvents.Count > 0)
+                {
+                    KeyValuePair<long, JsonElement> first = _pendingEvents.First();
+                    _pendingEvents.Remove(first.Key);
+                    if (first.Key == _pendingSnapshotSequence) _pendingSnapshotSequence = 0;
+                    if (_pendingEvents.Count > 0 && _eventSignal.CurrentCount == 0)
+                        _eventSignal.Release();
+                    return first.Value;
+                }
+                if (_eventsCompleted) throw new EndOfStreamException("Worker event stream is closed.");
             }
         }
     }
@@ -391,14 +370,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
                     if (envelope.EventSequence != expected || envelope.Sequence != expected)
                         throw new InvalidDataException("Worker event sequence is not strictly increasing.");
                     Interlocked.Exchange(ref _lastEventSequence, expected);
-                    JsonElement eventPayload = envelope.Payload.Clone();
-                    string eventType = eventPayload.ValueKind == JsonValueKind.Object &&
-                        eventPayload.TryGetProperty("type", out JsonElement typeValue)
-                            ? typeValue.GetString() ?? string.Empty : string.Empty;
-                    if (eventType == "Snapshot")
-                        _snapshots.Writer.TryWrite(eventPayload);
-                    else if (!_physicsEvents.Writer.TryWrite(eventPayload))
-                        throw new InvalidOperationException("Supervisor critical physics event queue overflowed.");
+                    EnqueueWorkerEvent(envelope.EventSequence!.Value, envelope.Payload.Clone());
                     continue;
                 }
 
@@ -433,8 +405,33 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         }
         finally
         {
-            _snapshots.Writer.TryComplete();
-            _physicsEvents.Writer.TryComplete();
+            lock (_eventLock) _eventsCompleted = true;
+            if (_eventSignal.CurrentCount == 0) _eventSignal.Release();
+        }
+    }
+
+    private void EnqueueWorkerEvent(long sequence, JsonElement payload)
+    {
+        string eventType = payload.ValueKind == JsonValueKind.Object &&
+            payload.TryGetProperty("type", out JsonElement typeValue) &&
+            typeValue.ValueKind == JsonValueKind.String
+                ? typeValue.GetString() ?? string.Empty : string.Empty;
+        bool isSnapshot = eventType == "Snapshot";
+
+        lock (_eventLock)
+        {
+            if (isSnapshot && _pendingSnapshotSequence != 0)
+                _pendingEvents.Remove(_pendingSnapshotSequence);
+
+            if (_pendingEvents.Count >= MaxPendingEvents)
+            {
+                if (isSnapshot) return;
+                throw new InvalidOperationException("Supervisor critical physics event queue overflowed.");
+            }
+
+            _pendingEvents.Add(sequence, payload);
+            if (isSnapshot) _pendingSnapshotSequence = sequence;
+            if (_eventSignal.CurrentCount == 0) _eventSignal.Release();
         }
     }
 
@@ -508,6 +505,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         foreach (PendingRequest pending in _pending.Values)
             pending.Completion.TrySetException(new ObjectDisposedException(nameof(GamePhysicsWorkerSupervisor)));
         _writeLock.Dispose();
+        _eventSignal.Dispose();
         _heartbeatStop.Dispose();
         _lifetime.Dispose();
         _process.Dispose();
