@@ -16,7 +16,7 @@ Target repository: `danggiatri6-spec/opensim`
    - `IGameProjectData` provider contract.
    - Revision save contract explicitly requires an atomic compare-and-advance operation using the expected current revision.
 
-## Build-system audit
+5. `OpenSim/Services/UserAccountService/GameProjectService.cs`\n   - Implements `IGameProjectService` with creator-owner checks, draft-only mutation, bounded pagination, metadata validation and typed result errors.\n   - Serializes manifests with a 2 MiB character limit and a UUID-as-string JSON converter.\n   - Saves immutable revisions through the provider's atomic compare-and-advance operation.\n   - Loads `IGameProjectData` through the existing `ServiceBase.LoadPlugin` pattern. The `GameProjectService` config section must provide `StorageProvider` and `ConnectionString` (or inherit them from `DatabaseService`).\n   - Provider failures are mapped to safe service results; no live Region or Scene is touched.\n\n## Build-system audit
 
 The active branch uses Prebuild to generate `OpenSim.sln`; the solution file is generated and is not tracked at repository root.
 
