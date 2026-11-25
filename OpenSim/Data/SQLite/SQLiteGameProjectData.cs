@@ -9,6 +9,7 @@ using System.Data.SQLite;
 using System.Globalization;
 using System.Reflection;
 using OpenMetaverse;
+using OpenSim.Framework;
 using OpenSim.Data;
 
 namespace OpenSim.Data.SQLite
