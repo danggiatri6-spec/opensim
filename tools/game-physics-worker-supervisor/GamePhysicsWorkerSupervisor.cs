@@ -122,6 +122,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             else
             {
                 Socket socket = await listener!.AcceptAsync(startupCts.Token).ConfigureAwait(false);
+                listener.Dispose();
                 stream = new NetworkStream(socket, ownsSocket: true);
             }
             connectedStream = stream;
