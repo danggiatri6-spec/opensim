@@ -1,5 +1,6 @@
 using System.Text.Json;
 using OpenMetaverse;
+using Nini.Config;
 using OpenSim.GamePhysics.WorkerProtocol;
 using OpenSim.GameRuntime;
 using OpenSim.Services.Interfaces;
@@ -15,6 +16,13 @@ UUID projectId = UUID.Random();
 UUID worldId = UUID.Random();
 var projects = new FakeProjectService(owner, projectId, worldId);
 var workers = new FakeWorkerFactory();
+await using (var disabledPlugin = new GameRuntimeServicePlugin(new IniConfigSource()))
+{
+    GameInstanceResult pluginDisabledStart = await disabledPlugin.StartInstanceAsync(owner, projectId, 1);
+    Assert(pluginDisabledStart.Error == GameInstanceError.WorkerUnavailable,
+        "config-driven service plugin defaults to disabled without initializing project storage");
+}
+
 await using (var disabledRuntime = new GameRuntimeService(projects, new FakeWorkerFactory(), new GameRuntimeOptions()))
 {
     GameInstanceResult disabledStart = await disabledRuntime.StartInstanceAsync(owner, projectId, 1);
