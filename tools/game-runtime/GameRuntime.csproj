@@ -17,6 +17,12 @@
     <Reference Include="OpenSim.Services.UserAccountService">
       <HintPath>../../bin/OpenSim.Services.UserAccountService.dll</HintPath>
     </Reference>
+    <Reference Include="OpenSim.Data">
+      <HintPath>../../bin/OpenSim.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenSim.Services.Base">
+      <HintPath>../../bin/OpenSim.Services.Base.dll</HintPath>
+    </Reference>
     <Reference Include="Nini">
       <HintPath>../../bin/Nini.dll</HintPath>
     </Reference>
