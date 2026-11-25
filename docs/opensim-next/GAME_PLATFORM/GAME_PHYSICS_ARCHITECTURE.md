@@ -352,3 +352,46 @@ Do not yet build a production Game Physics adapter on top of either Region modul
 - **Dedicated worker process:** run isolated Game Runtime physics worker(s), each hosting one or a bounded number of worlds, with a narrow IPC protocol, resource limits, health checks, and restart boundaries. This is safer for native crashes and global static state but adds IPC and deployment complexity.
 
 The spike must measure initialization cost, steady-state step cost, teardown reliability, and two-world isolation. It must not change existing Region physics behavior. The choice between in-process refactor and worker process is intentionally open until those tests exist.
+## 18. BulletS lifecycle spike plan (2026-11-25)
+
+The follow-up source inspection narrows the first prototype to a lifecycle test. No production adapter should be written until this spike passes.
+
+### Confirmed lifecycle details
+
+- BSScene.Initialise allocates collision/update arrays, calls PE.Initialize(...), creates constraints and terrain, sets m_initialized = true, and optionally starts BulletSPluginPhysicsThread through WorkManager.StartThread.
+- The worker loop checks m_initialized, reads the process-wide BSParam.Active and BSParam.PhysicsTimeStep, performs DoPhysicsStep, then may block in m_updateWaitEvent.WaitOne(...).
+- BSScene.Dispose sets m_initialized = false, destroys physics objects, constraints, shapes and terrain, then calls PE.Shutdown(World). The inspected method does not signal the wait event or join m_physicsThread before native shutdown.
+- BSAPIUnman.Initialize pins the configuration, collision and update arrays on the API instance. Shutdown calls the native shutdown function and then frees those handles. A step must never overlap this shutdown.
+- BSAPIUnman stores its PhysicsScene and pinned handles as instance fields, which is a useful ownership boundary if one API instance is guaranteed per world. This must be verified at every construction path before relying on it.
+
+### Minimal spike — do not modify Region behavior
+
+Create a test-only harness around the narrowest existing backend boundary, rather than constructing a fake Scene or registering a fake Region:
+
+1. Trace every BSAPITemplate construction and engine-selection path; prove whether PE, pinned buffers, callback delegates and native world handles are unique per BSScene.
+2. Build two backend worlds sequentially with independent parameter blocks and collision/update buffers. Step world A and world B alternately, then concurrently only if the native backend explicitly supports it.
+3. Destroy world A while world B continues stepping. Verify B's body state and collision callbacks remain valid.
+4. Repeat create/step/destroy for at least 100 cycles; record native handle validity, pinned-handle allocation counts, managed exceptions and process memory trend.
+5. Inject a slow step and dispose request while the worker is waiting and while it is inside DoPhysicsStep. The test must prove a deterministic stop → wake → join → destroy objects → native shutdown → free pinned buffers sequence.
+6. Run the same tests against the managed BulletXNA implementation separately; do not infer its thread-safety from the unmanaged backend.
+
+### Required design changes if the in-process route is pursued
+
+- Introduce an immutable per-world settings/capabilities object. The Game Physics path must not read or mutate BSParam static values after world creation.
+- Give each world an explicit lifecycle owner with idempotent Start, RequestStop, Join, and Dispose operations. A cancellation signal must wake any timed wait; native shutdown must occur only after the step thread has exited.
+- Keep callbacks, pinned arrays, native handles, collision queues and update queues owned by that world. Never share a pinned buffer between worlds.
+- Keep legacy Region BSScene on its current configuration path until compatibility tests prove an isolated refactor has no behavior change. Prefer a new backend core or adapter over changing BSScene semantics in place.
+- Do not remove global locks or introduce parallel stepping until the backend's native and managed implementations have passed the two-world concurrency tests.
+
+### Spike decision gates
+
+| Gate | Pass condition | Failure consequence |
+|---|---|---|
+| Ownership | Every world owns its API instance, buffers, callbacks and native handle | Use a worker-process boundary or redesign ownership |
+| Configuration | Two worlds can use different settings without cross-talk | Keep process isolation; no in-process multi-profile runtime |
+| Teardown | Stop/wake/join always completes before native shutdown | No production reuse of current thread lifecycle |
+| Independence | Destroying or faulting A does not affect B | One world per worker process until isolation is proven |
+| Stability | 100 lifecycle cycles complete without leaks, stale callbacks or invalid handles | Fix backend lifecycle before adapter work |
+| Compatibility | Existing Region physics regression suite remains unchanged | Do not merge changes into the legacy Region path |
+
+**Current decision:** the source audit identifies a concrete teardown race and global configuration coupling, but has not yet demonstrated a runtime failure or a safe fix. The next code change should be a test-only lifecycle spike or a narrowly scoped new backend core; it should not be a broad BSScene, BSParam, or Scene.cs rewrite.
