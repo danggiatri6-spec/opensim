@@ -67,6 +67,7 @@ internal static class Program
             !hello.Payload.TryGetProperty("token", out JsonElement tokenElement) ||
             tokenElement.ValueKind != JsonValueKind.String)
         {
+            Console.Error.WriteLine("Handshake rejected: invalid envelope or missing token.");
             return 4;
         }
 
@@ -74,9 +75,10 @@ internal static class Program
         byte[] supplied = System.Text.Encoding.UTF8.GetBytes(tokenElement.GetString() ?? string.Empty);
         byte[] expected;
         try { expected = Convert.FromBase64String(launchToken ?? string.Empty); }
-        catch (FormatException) { return 5; }
+        catch (FormatException) { Console.Error.WriteLine("Handshake rejected: invalid launch token encoding."); return 5; }
         if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(supplied, expected))
         {
+            Console.Error.WriteLine("Handshake rejected: capability token mismatch.");
             await WriteResponseAsync(stream, hello, false, WorkerErrorCode.AuthenticationFailed, default);
             return 5;
         }
