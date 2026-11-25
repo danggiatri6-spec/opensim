@@ -42,6 +42,9 @@ jobs:
       - name: Run AI Friend domain tests
         run: dotnet run --configuration Release --project tools/ai-friend-test-runner/AiFriend.TestRunner.csproj
 
+      - name: Run AI Friend SQLite integration tests
+        run: dotnet run --configuration Release --project tools/ai-friend-sqlite-test-runner/AiFriendSqliteTestRunner.csproj
+
       - name: Run Game Platform validation and SQLite integration tests
         run: dotnet run --configuration Release --project tools/game-project-test-runner/GameProjectTestRunner.csproj
 
