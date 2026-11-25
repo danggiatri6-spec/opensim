@@ -22,6 +22,30 @@ GamePhysicsWorkerLaunchOptions Options() => new()
     HeartbeatTimeout = TimeSpan.FromSeconds(3)
 };
 
+string[] ExistingWorkerDirectories() =>
+    Directory.GetDirectories(Path.GetTempPath(), "opensim-worker-*").OrderBy(x => x).ToArray();
+
+string[] workerDirectoriesBeforeStartupFailure = ExistingWorkerDirectories();
+bool startupFailureCleaned = false;
+try
+{
+    GamePhysicsWorkerLaunchOptions invalidLaunch = new()
+    {
+        WorkerAssemblyPath = typeof(GamePhysicsWorkerSupervisor).Assembly.Location,
+        WorldId = Guid.NewGuid(),
+        StartupTimeout = TimeSpan.FromSeconds(2),
+        RequestTimeout = TimeSpan.FromSeconds(2),
+        ShutdownTimeout = TimeSpan.FromSeconds(2)
+    };
+    await using GamePhysicsWorkerSupervisor ignored =
+        await GamePhysicsWorkerSupervisor.StartAsync(invalidLaunch);
+}
+catch (Exception) { startupFailureCleaned = true; }
+Assert(startupFailureCleaned &&
+    ExistingWorkerDirectories().SequenceEqual(workerDirectoriesBeforeStartupFailure),
+    "worker startup failure terminates the child and removes its private IPC endpoint directory");
+
+
 await using (GamePhysicsWorkerSupervisor supervisor =
     await GamePhysicsWorkerSupervisor.StartAsync(Options()))
 {
@@ -318,6 +342,25 @@ for (int cycle = 0; cycle < 5; cycle++)
         $"repeated worker lifecycle cycle {cycle + 1} exits its child process cleanly");
     await repeated.DisposeAsync();
 }
+
+string[] workerDirectoriesBeforeCancelledStop = ExistingWorkerDirectories();
+GamePhysicsWorkerSupervisor cancelledStop = await GamePhysicsWorkerSupervisor.StartAsync(Options());
+int cancelledStopPid = cancelledStop.ProcessId;
+using (Process cancelledStopProcess = Process.GetProcessById(cancelledStopPid))
+{
+    bool cancellationObserved = false;
+    using var alreadyCancelled = new CancellationTokenSource();
+    alreadyCancelled.Cancel();
+    try { await cancelledStop.StopAsync(alreadyCancelled.Token); }
+    catch (OperationCanceledException) { cancellationObserved = true; }
+    catch (Exception) { cancellationObserved = true; }
+    await cancelledStopProcess.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+    Assert(cancellationObserved && cancelledStop.State == WorkerLifecycleState.Faulted &&
+        cancelledStopProcess.HasExited &&
+        ExistingWorkerDirectories().SequenceEqual(workerDirectoriesBeforeCancelledStop),
+        "cancelled shutdown force-terminates the worker and cleans up its IPC endpoint");
+}
+await cancelledStop.DisposeAsync();
 
 var failingRuntime = new WorkerSimulationRuntime(new ThrowingStepAdapter());
 await failingRuntime.ExecuteAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Balanced" }));
