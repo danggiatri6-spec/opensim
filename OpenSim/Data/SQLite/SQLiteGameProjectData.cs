@@ -101,19 +101,20 @@ VALUES (@ProjectID, @OwnerID, @Name, @Description, @Status, @SchemaVersion, @Cur
         }
 
         public bool UpdateProjectMetadata(UUID projectID, UUID ownerID, long expectedCurrentRevision,
-            string name, string description, DateTime updatedUTC)
+            DateTime expectedUpdatedUTC, string name, string description, DateTime updatedUTC)
         {
             using (SQLiteConnection connection = OpenConnection())
             using (SQLiteCommand command = connection.CreateCommand())
             {
                 command.CommandText = @"UPDATE GameProjects SET Name = @Name, Description = @Description, UpdatedUTC = @UpdatedUTC
-WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @ExpectedRevision AND Status <> 2";
+WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @ExpectedRevision AND UpdatedUTC = @ExpectedUpdatedUTC AND Status <> 2";
                 command.Parameters.AddWithValue("@Name", name ?? string.Empty);
                 command.Parameters.AddWithValue("@Description", description ?? string.Empty);
                 command.Parameters.AddWithValue("@UpdatedUTC", FormatDate(updatedUTC));
                 command.Parameters.AddWithValue("@ProjectID", projectID.ToString());
                 command.Parameters.AddWithValue("@OwnerID", ownerID.ToString());
                 command.Parameters.AddWithValue("@ExpectedRevision", expectedCurrentRevision);
+                command.Parameters.AddWithValue("@ExpectedUpdatedUTC", FormatDate(expectedUpdatedUTC));
                 return command.ExecuteNonQuery() == 1;
             }
         }
