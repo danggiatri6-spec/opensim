@@ -8,7 +8,7 @@ Target repository: `danggiatri6-spec/opensim`
 1. `OpenSim/Services/Interfaces/GameProjectContracts.cs`
    - Project, world, spawn point, asset reference, settings, manifest and revision contracts.
    - Project status and service error enums.
-   - Manifest validator with schema version, collection limits, coordinate checks, asset-reference checks and default-world validation.
+   - Manifest validator with schema version and collection limits; bounds world descriptions, spawn names, tags and asset usage; rejects non-finite transforms and non-normalized rotations; requires a valid default-world reference.
    - `IGameProjectService` service boundary.
 
 2. `OpenSim/Data/IGameProjectData.cs`
