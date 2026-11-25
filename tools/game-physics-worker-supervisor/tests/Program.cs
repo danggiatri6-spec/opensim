@@ -362,6 +362,61 @@ using (Process cancelledStopProcess = Process.GetProcessById(cancelledStopPid))
 }
 await cancelledStop.DisposeAsync();
 
+var startupWatchA = Stopwatch.StartNew();
+await using GamePhysicsWorkerSupervisor benchmarkA =
+    await GamePhysicsWorkerSupervisor.StartAsync(Options());
+startupWatchA.Stop();
+var startupWatchB = Stopwatch.StartNew();
+await using GamePhysicsWorkerSupervisor benchmarkB =
+    await GamePhysicsWorkerSupervisor.StartAsync(Options());
+startupWatchB.Stop();
+using Process benchmarkProcessA = Process.GetProcessById(benchmarkA.ProcessId);
+using Process benchmarkProcessB = Process.GetProcessById(benchmarkB.ProcessId);
+await benchmarkA.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Lightweight" }));
+await benchmarkB.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Advanced" }));
+for (int i = 0; i < 16; i++)
+{
+    await benchmarkA.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = Guid.NewGuid(), mass = 1f, shape = "Sphere",
+        position = new { x = i * 10f, y = 100f, z = 0f }
+    }));
+    await benchmarkB.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = Guid.NewGuid(), mass = 1f, shape = "Sphere",
+        position = new { x = i * 10f, y = 100f, z = 0f }
+    }));
+}
+await benchmarkA.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
+await benchmarkB.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
+benchmarkProcessA.Refresh();
+benchmarkProcessB.Refresh();
+long memoryStartA = benchmarkProcessA.WorkingSet64;
+long memoryStartB = benchmarkProcessB.WorkingSet64;
+TimeSpan cpuStartA = benchmarkProcessA.TotalProcessorTime;
+TimeSpan cpuStartB = benchmarkProcessB.TotalProcessorTime;
+await Task.Delay(TimeSpan.FromSeconds(2));
+await benchmarkA.CheckHealthAsync();
+await benchmarkB.CheckHealthAsync();
+JsonElement benchmarkSnapshotA = await benchmarkA.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+JsonElement benchmarkSnapshotB = await benchmarkB.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+benchmarkProcessA.Refresh();
+benchmarkProcessB.Refresh();
+long memoryEndA = benchmarkProcessA.WorkingSet64;
+long memoryEndB = benchmarkProcessB.WorkingSet64;
+TimeSpan cpuEndA = benchmarkProcessA.TotalProcessorTime;
+TimeSpan cpuEndB = benchmarkProcessB.TotalProcessorTime;
+Assert(benchmarkSnapshotA.GetProperty("tick").GetInt64() >= 30 &&
+    benchmarkSnapshotB.GetProperty("tick").GetInt64() >= 30,
+    "two-worker benchmark confirms both independent worlds advance during the measurement window");
+Console.WriteLine(
+    $"METRIC worker_start_ms A={startupWatchA.Elapsed.TotalMilliseconds:F1} B={startupWatchB.Elapsed.TotalMilliseconds:F1}; " +
+    $"working_set_delta_bytes A={memoryEndA - memoryStartA} B={memoryEndB - memoryStartB}; " +
+    $"cpu_delta_ms A={(cpuEndA - cpuStartA).TotalMilliseconds:F1} B={(cpuEndB - cpuStartB).TotalMilliseconds:F1}; " +
+    $"window_ms=2000 bodies_per_worker=16");
+await benchmarkA.StopAsync();
+await benchmarkB.StopAsync();
+
 var failingRuntime = new WorkerSimulationRuntime(new ThrowingStepAdapter());
 await failingRuntime.ExecuteAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Balanced" }));
 await failingRuntime.ExecuteAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
