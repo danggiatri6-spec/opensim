@@ -11,6 +11,7 @@ public static class WorkerMarker { }
 internal static class Program
 {
     private const int MaxFrameBytes = WorkerProtocolConstants.DefaultMaxCommandFrameBytes;
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public static async Task<int> Main(string[] args)
     {
@@ -58,7 +59,7 @@ internal static class Program
         if (first is null)
             return 3;
 
-        WorkerProtocolEnvelope? hello = first.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonSerializerOptions.Web);
+        WorkerProtocolEnvelope? hello = first.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonOptions);
         if (!WorkerProtocolValidator.TryValidate(hello, out _) ||
             hello!.Kind != WorkerMessageKind.Request ||
             hello.Operation != "Hello" ||
@@ -100,7 +101,7 @@ internal static class Program
             if (document is null)
                 return 0;
 
-            WorkerProtocolEnvelope? request = document.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonSerializerOptions.Web);
+            WorkerProtocolEnvelope? request = document.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonOptions);
             if (!WorkerProtocolValidator.TryValidate(request, out _) ||
                 request!.Kind != WorkerMessageKind.Request ||
                 request.WorldId != hello.WorldId ||
@@ -144,7 +145,7 @@ internal static class Program
             Payload = payload
         };
 
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonSerializerOptions.Web);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
         await WorkerFrameCodec.WriteAsync(stream, bytes, MaxFrameBytes);
     }
 }
