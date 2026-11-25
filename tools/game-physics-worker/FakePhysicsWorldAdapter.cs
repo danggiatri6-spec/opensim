@@ -123,6 +123,7 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
 
         for (int i = 0; i < steps; i++)
         {
+            var updates = new List<(BodyState Body, Vector3 Position, Vector3 Velocity)>();
             foreach (BodyState body in _bodies.Values)
             {
                 if (body.IsStatic)
@@ -131,8 +132,13 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
                 Vector3 nextPosition = body.Position + nextVelocity * FixedTimeStep;
                 if (!IsValidVector(nextVelocity) || !IsValidVector(nextPosition))
                     throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "Simulation state exceeded permitted world bounds.");
-                body.Velocity = nextVelocity;
-                body.Position = nextPosition;
+                updates.Add((body, nextPosition, nextVelocity));
+            }
+
+            foreach (var update in updates)
+            {
+                update.Body.Velocity = update.Velocity;
+                update.Body.Position = update.Position;
             }
             _tick++;
         }
