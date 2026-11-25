@@ -4,7 +4,6 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Threading.Channels;
 using OpenSim.GamePhysics.WorkerProtocol;
 
 namespace OpenSim.GamePhysics.WorkerSupervisor;
