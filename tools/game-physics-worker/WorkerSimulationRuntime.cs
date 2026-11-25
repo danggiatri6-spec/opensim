@@ -70,7 +70,10 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
                     try
                     {
                         JsonElement snapshot = _adapter.Step(JsonSerializer.SerializeToElement(new { steps = 1 }));
-                        Interlocked.Increment(ref _tickCount);
+                        long currentTick = snapshot.TryGetProperty("tick", out JsonElement tickValue) && tickValue.TryGetInt64(out long reportedTick)
+                            ? reportedTick
+                            : TickCount + 1;
+                        Interlocked.Exchange(ref _tickCount, currentTick);
                         if (TickCount - _lastSnapshotTick >= 2)
                         {
                             _lastSnapshotTick = TickCount;
@@ -144,7 +147,10 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
     {
         if (_running)
             throw new WorkerCommandException(WorkerErrorCode.InvalidWorldState, "Manual Step is available only while simulation is paused.");
-        return _adapter.Step(payload);
+        JsonElement snapshot = _adapter.Step(payload);
+        if (snapshot.TryGetProperty("tick", out JsonElement tickValue) && tickValue.TryGetInt64(out long reportedTick))
+            Interlocked.Exchange(ref _tickCount, reportedTick);
+        return snapshot;
     }
 
     private JsonElement StartSimulation()
