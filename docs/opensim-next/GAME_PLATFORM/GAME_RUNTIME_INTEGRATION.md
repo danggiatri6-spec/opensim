@@ -150,3 +150,21 @@ A graceful stop returns a typed `WorkerUnavailable` result if the worker cannot 
 ## 9. Deployment bundle
 
 CI publishes a `opensim-next-game-runtime` artifact containing `GameRuntime.dll`, the Supervisor and Protocol assemblies, required OpenSim contract assemblies, and a `worker/` directory with the Worker executable and its .NET runtime metadata. Configure `WorkerAssemblyPath` to the absolute path of `worker/GamePhysicsWorker.dll` under the extracted bundle directory. Keep the bundle directory private to the OpenSim service identity; the Worker IPC endpoint remains local and is not a public listener.
+
+### Config-driven service composition
+
+`GameRuntimeServicePlugin` is the config-driven `IGameRuntimeService` entry point. It accepts `IConfigSource`, reads `[GameRuntimeService]`, and initializes `GameProjectService` plus the Worker factory only when enabled. The disabled default does not initialize project storage or launch child processes.
+
+Example configuration (keep disabled until the deployment bundle and service access path are deliberately enabled):
+
+```ini
+[GameRuntimeService]
+Enabled = false
+WorkerAssemblyPath = "worker/GamePhysicsWorker.dll"
+StartupTimeoutSeconds = 15
+RequestTimeoutSeconds = 5
+ShutdownTimeoutSeconds = 10
+HeartbeatIntervalSeconds = 5
+HeartbeatTimeoutSeconds = 3
+MaximumActiveInstances = 16
+```
