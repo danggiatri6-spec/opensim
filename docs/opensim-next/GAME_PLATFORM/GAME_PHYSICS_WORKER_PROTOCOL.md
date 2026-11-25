@@ -344,12 +344,18 @@ Do not include creator secrets, user tokens, or arbitrary asset contents in tele
 - [x] Authenticate the first Hello request with a per-launch 256-bit capability token delivered through redirected standard input, never command-line arguments or logs; compare decoded token bytes in constant time.
 - [x] Validate world identity and strictly increasing host command sequence; implement Echo and graceful Shutdown.
 - [x] Add Linux integration coverage for authenticated handshake, framed Echo round-trip, graceful process exit, and forced child termination.
-- [ ] Integrate the supervisor into the OpenSim Game Runtime; current integration runner is a standalone host harness.
-- [ ] Run the named-pipe integration suite on a Windows CI runner.
-- [ ] Add explicit startup/handshake timeout, malformed-message, duplicate-connection, and crash-detection tests.
-- [ ] Verify no public TCP listener is opened by the worker process.
+- [x] Add a reusable host-side supervisor library that starts the worker, owns the IPC endpoint, authenticates the handshake, correlates requests, and controls graceful shutdown.
+- [x] Enforce bounded startup, request, heartbeat, and shutdown deadlines.
+- [x] Send periodic health pings and transition the supervisor to Faulted / terminate the child when health checks fail.
+- [x] Monitor OS process exit independently of worker protocol responses.
+- [x] Serialize concurrent host requests so sequence numbers are allocated in actual wire-send order.
+- [x] Test graceful shutdown and forced child-process termination detection.
+- [x] Run the supervisor integration suite on both Linux (Unix Domain Socket) and Windows (Named Pipes) CI.
+- [ ] Integrate the supervisor into the OpenSim Game Runtime; the current supervisor is a standalone host library and test harness.
+- [ ] Add dedicated negative tests for wrong capability tokens, malformed envelopes, duplicate host connections, and sequence replay.
+- [ ] Add an explicit process-level check that the worker exposes no public TCP listener.
 
-W1 is therefore an initial executable/IPC prototype, not yet accepted as complete. The current GitHub Actions Linux run verifies the Unix-domain-socket path; Windows named-pipe behavior is implemented but not yet runtime-verified.
+W1 now has a cross-platform executable and tested supervisor prototype. Both local IPC transports have passed CI: Linux Unix-domain sockets and Windows named pipes. The supervisor also enforces request ordering, deadlines, health checks, and child-process exit monitoring. W1 is still not complete: the supervisor is not yet wired into the OpenSim Game Runtime, and dedicated negative-security tests remain open.
 
 ### W2 — Backend adapter prototype
 - Introduce a narrow `IPhysicsWorldAdapter` contract inside the worker process.
