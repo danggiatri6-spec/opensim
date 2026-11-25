@@ -137,6 +137,13 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     Assert(paused.GetProperty("state").GetString() == "Paused" && realtimeTicks >= 8 &&
         snapshot.GetProperty("bodies")[0].GetProperty("position").GetProperty("y").GetSingle() < 20f,
         "background simulation advances at approximately 30 Hz and pauses cleanly");
+    using (var eventTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)))
+    {
+        JsonElement physicsEvent = await supervisor.ReadEventAsync(eventTimeout.Token);
+        Assert(physicsEvent.GetProperty("type").GetString() == "Snapshot" &&
+            physicsEvent.GetProperty("snapshot").GetProperty("tick").GetInt64() > 0,
+            "supervisor receives asynchronous coalesced snapshots independently of request responses");
+    }
     await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = realtimeBodyId }));
 
     long tickBeforeBoundaryTest = snapshot.GetProperty("tick").GetInt64();
