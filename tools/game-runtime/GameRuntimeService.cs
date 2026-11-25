@@ -431,6 +431,10 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                     await record.Worker.DisposeAsync().ConfigureAwait(false);
             }
             finally { record.Gate.Release(); }
+            if (record.Monitor is not null)
+            {
+                try { await record.Monitor.ConfigureAwait(false); } catch { }
+            }
         }
         _registryLock.Dispose();
     }
