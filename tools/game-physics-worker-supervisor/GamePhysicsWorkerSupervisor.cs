@@ -257,42 +257,51 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         if (!allowStopping && State != WorkerLifecycleState.Ready)
             throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
-        var request = new WorkerProtocolEnvelope
-        {
-            Kind = WorkerMessageKind.Request,
-            WorldId = _options.WorldId,
-            RequestId = Guid.NewGuid(),
-            Sequence = Interlocked.Increment(ref _sequence),
-            Operation = operation,
-            Payload = payload.Clone()
-        };
-        var pending = new PendingRequest(request.Sequence);
-        if (!_pending.TryAdd(request.RequestId!.Value, pending))
-            throw new InvalidOperationException("Could not register worker request.");
-
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
         linked.CancelAfter(_options.RequestTimeout);
+        WorkerProtocolEnvelope request;
+        PendingRequest pending;
+
+        await _writeLock.WaitAsync(linked.Token).ConfigureAwait(false);
         try
         {
             if (!allowStopping && State != WorkerLifecycleState.Ready)
                 throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
-            await _writeLock.WaitAsync(linked.Token).ConfigureAwait(false);
-            try
+            request = new WorkerProtocolEnvelope
             {
-                await WorkerFrameCodec.WriteAsync(_stream, bytes,
-                    WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
-            }
-            finally { _writeLock.Release(); }
+                Kind = WorkerMessageKind.Request,
+                WorldId = _options.WorldId,
+                RequestId = Guid.NewGuid(),
+                Sequence = Interlocked.Increment(ref _sequence),
+                Operation = operation,
+                Payload = payload.Clone()
+            };
+            pending = new PendingRequest(request.Sequence);
+            if (!_pending.TryAdd(request.RequestId!.Value, pending))
+                throw new InvalidOperationException("Could not register worker request.");
 
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
+            await WorkerFrameCodec.WriteAsync(_stream, bytes,
+                WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
+        }
+        catch
+        {
+            if (request?.RequestId is Guid requestId)
+                _pending.TryRemove(requestId, out _);
+            throw;
+        }
+        finally { _writeLock.Release(); }
+
+        try
+        {
             return await pending.Completion.Task.WaitAsync(linked.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
             throw new TimeoutException($"Worker request '{operation}' exceeded its deadline.");
         }
-        finally { _pending.TryRemove(request.RequestId.Value, out _); }
+        finally { _pending.TryRemove(request.RequestId!.Value, out _); }
     }
 
     private async Task<JsonDocument> ExchangeHandshakeAsync(
