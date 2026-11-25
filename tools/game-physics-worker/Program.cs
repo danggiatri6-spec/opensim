@@ -2,6 +2,7 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Threading.Channels;
 using OpenSim.GamePhysics.WorkerProtocol;
 
 namespace OpenSim.GamePhysics.Worker;
@@ -94,14 +95,21 @@ internal static class Program
 
         await using var runtime = new WorkerSimulationRuntime(new FakePhysicsWorldAdapter());
         runtime.SetWorldId(hello.WorldId);
-        await WriteResponseAsync(stream, hello, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }));
+        using var writerLock = new SemaphoreSlim(1, 1);
+        using var eventStop = new CancellationTokenSource();
+        Task eventPump = PublishSnapshotsAsync(runtime, stream, hello.WorldId, writerLock, eventStop.Token);
+        await WriteResponseAsync(stream, hello, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }), writerLock);
 
         long lastSequence = 1;
         while (true)
         {
             using JsonDocument? document = await WorkerFrameCodec.ReadAsync(stream, MaxFrameBytes);
             if (document is null)
+            {
+                eventStop.Cancel();
+                try { await eventPump.ConfigureAwait(false); } catch (OperationCanceledException) { }
                 return 0;
+            }
 
             WorkerProtocolEnvelope? request = document.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonOptions);
             if (!WorkerProtocolValidator.TryValidate(request, out _) ||
@@ -115,38 +123,40 @@ internal static class Program
             lastSequence = request.Sequence;
             if (request.Operation == "Shutdown")
             {
-                await WriteResponseAsync(stream, request, true, null, JsonSerializer.SerializeToElement(new { state = "Stopped" }));
+                await WriteResponseAsync(stream, request, true, null, JsonSerializer.SerializeToElement(new { state = "Stopped" }), writerLock);
+                eventStop.Cancel();
+                try { await eventPump.ConfigureAwait(false); } catch (OperationCanceledException) { }
                 return 0;
             }
 
             if (request.Operation == "Ping")
             {
                 JsonElement health = await runtime.ExecuteAsync("GetHealth", JsonSerializer.SerializeToElement(new { }));
-                await WriteResponseAsync(stream, request, true, null, health);
+                await WriteResponseAsync(stream, request, true, null, health, writerLock);
                 continue;
             }
 
             if (request.Operation == "Echo")
             {
-                await WriteResponseAsync(stream, request, true, null, request.Payload);
+                await WriteResponseAsync(stream, request, true, null, request.Payload, writerLock);
                 continue;
             }
 
             try
             {
                 JsonElement result = await runtime.ExecuteAsync(request.Operation!, request.Payload);
-                await WriteResponseAsync(stream, request, true, null, result);
+                await WriteResponseAsync(stream, request, true, null, result, writerLock);
             }
             catch (WorkerCommandException ex)
             {
                 await WriteResponseAsync(stream, request, false, ex.Code,
-                    JsonSerializer.SerializeToElement(new { message = ex.Message }));
+                    JsonSerializer.SerializeToElement(new { message = ex.Message }), writerLock);
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"Worker command failed: {ex.GetType().Name}");
                 await WriteResponseAsync(stream, request, false, WorkerErrorCode.InternalError,
-                    JsonSerializer.SerializeToElement(new { message = "Worker command failed." }));
+                    JsonSerializer.SerializeToElement(new { message = "Worker command failed." }), writerLock);
             }
         }
     }
@@ -156,7 +166,8 @@ internal static class Program
         WorkerProtocolEnvelope request,
         bool ok,
         WorkerErrorCode? error,
-        JsonElement payload)
+        JsonElement payload,
+        SemaphoreSlim writerLock)
     {
         if (payload.ValueKind == System.Text.Json.JsonValueKind.Undefined)
             payload = JsonSerializer.SerializeToElement(new { });
@@ -173,6 +184,33 @@ internal static class Program
         };
 
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonOptions);
-        await WorkerFrameCodec.WriteAsync(stream, bytes, MaxFrameBytes);
+        await writerLock.WaitAsync().ConfigureAwait(false);
+        try { await WorkerFrameCodec.WriteAsync(stream, bytes, MaxFrameBytes).ConfigureAwait(false); }
+        finally { writerLock.Release(); }
+    }
+
+    private static async Task PublishSnapshotsAsync(
+        WorkerSimulationRuntime runtime, Stream stream, Guid worldId,
+        SemaphoreSlim writerLock, CancellationToken cancellationToken)
+    {
+        long eventSequence = 0;
+        await foreach (JsonElement snapshot in runtime.Snapshots.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var message = new WorkerProtocolEnvelope
+            {
+                Kind = WorkerMessageKind.Event,
+                WorldId = worldId,
+                Sequence = eventSequence + 1,
+                EventSequence = ++eventSequence,
+                Payload = JsonSerializer.SerializeToElement(new { type = "Snapshot", snapshot })
+            };
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
+            await writerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await WorkerFrameCodec.WriteAsync(stream, bytes, WorkerProtocolConstants.DefaultMaxSnapshotFrameBytes, cancellationToken).ConfigureAwait(false);
+            }
+            finally { writerLock.Release(); }
+        }
     }
 }
