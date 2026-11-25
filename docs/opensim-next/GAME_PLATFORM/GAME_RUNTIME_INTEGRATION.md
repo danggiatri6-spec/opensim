@@ -140,3 +140,9 @@ No W6 gate is considered complete merely because the standalone Worker tests pas
 - [ ] Fault-stop cleanup and host-shutdown acceptance tests.
 
 The real-process acceptance runner uses the production Worker executable and Supervisor over the platform IPC transport. Linux child-process lifecycle passed; Windows Named Pipes supervisor tests also passed. The standalone runtime assembly is intentionally not yet registered as a default OpenSim service. It remains disabled unless explicitly constructed with `GameRuntimeOptions.Enabled = true`; service registration follows after deployment paths and shutdown ownership are proven.
+
+## 8. Runtime configuration and failure behavior
+
+The standalone runtime accepts these bounded host settings: `Enabled` (default `false`), `WorkerAssemblyPath` (required only when enabled), startup/request/shutdown deadlines, heartbeat interval/timeout, and `MaximumActiveInstances` (default 16, maximum 256). A disabled runtime can be constructed without a worker deployment path and returns `WorkerUnavailable` for start requests.
+
+A graceful stop returns a typed `WorkerUnavailable` result if the worker cannot stop cleanly; the instance is marked `Faulted`, its reservation is released, and the session is disposed. Caller cancellation remains cancellation (rather than being converted to a success or generic error) after cleanup is attempted. Faulted child processes are explicitly killed and awaited during supervisor disposal.
