@@ -218,8 +218,9 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             if (!snapshotsCompleted)
                 snapshotWait ??= _snapshots.Reader.WaitToReadAsync(cancellationToken).AsTask();
 
-            Task completed = physicsWait is null ? snapshotWait! :
-                snapshotWait is null ? physicsWait : await Task.WhenAny(physicsWait, snapshotWait).ConfigureAwait(false);
+            if (physicsWait is null) await snapshotWait!.ConfigureAwait(false);
+            else if (snapshotWait is null) await physicsWait.ConfigureAwait(false);
+            else await Task.WhenAny(physicsWait, snapshotWait).ConfigureAwait(false);
 
             if (physicsWait is not null && physicsWait.IsCompleted)
             {
