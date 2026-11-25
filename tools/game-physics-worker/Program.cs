@@ -72,10 +72,18 @@ internal static class Program
         }
 
         string? launchToken = await Console.In.ReadLineAsync();
-        byte[] supplied = System.Text.Encoding.UTF8.GetBytes(tokenElement.GetString() ?? string.Empty);
+        byte[] supplied;
         byte[] expected;
-        try { expected = Convert.FromBase64String(launchToken ?? string.Empty); }
-        catch (FormatException) { Console.Error.WriteLine("Handshake rejected: invalid launch token encoding."); return 5; }
+        try
+        {
+            supplied = Convert.FromBase64String(tokenElement.GetString() ?? string.Empty);
+            expected = Convert.FromBase64String(launchToken ?? string.Empty);
+        }
+        catch (FormatException)
+        {
+            Console.Error.WriteLine("Handshake rejected: invalid capability token encoding.");
+            return 5;
+        }
         if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(supplied, expected))
         {
             Console.Error.WriteLine("Handshake rejected: capability token mismatch.");
