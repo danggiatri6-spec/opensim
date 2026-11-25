@@ -2,7 +2,6 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
-using System.Threading.Channels;
 using OpenSim.GamePhysics.WorkerProtocol;
 
 namespace OpenSim.GamePhysics.Worker;
@@ -73,6 +72,7 @@ internal static class Program
             return 4;
         }
 
+        using var writerLock = new SemaphoreSlim(1, 1);
         string? launchToken = await Console.In.ReadLineAsync();
         byte[] supplied;
         byte[] expected;
@@ -89,13 +89,12 @@ internal static class Program
         if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(supplied, expected))
         {
             Console.Error.WriteLine("Handshake rejected: capability token mismatch.");
-            await WriteResponseAsync(stream, hello, false, WorkerErrorCode.AuthenticationFailed, default);
+            await WriteResponseAsync(stream, hello, false, WorkerErrorCode.AuthenticationFailed, default, writerLock);
             return 5;
         }
 
         await using var runtime = new WorkerSimulationRuntime(new FakePhysicsWorldAdapter());
         runtime.SetWorldId(hello.WorldId);
-        using var writerLock = new SemaphoreSlim(1, 1);
         using var eventStop = new CancellationTokenSource();
         Task eventPump = PublishSnapshotsAsync(runtime, stream, hello.WorldId, writerLock, eventStop.Token);
         await WriteResponseAsync(stream, hello, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }), writerLock);
