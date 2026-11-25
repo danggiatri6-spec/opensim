@@ -399,8 +399,10 @@ W3-A and W3-B acceptance tests pass on Linux and Windows CI. Coverage includes s
 - [x] Kill worker A during active stepping and verify the supervisor marks it Faulted (Linux and Windows CI run `45558227141`).
 - [x] Verify independent worker B remains healthy and continues stepping after worker A crashes (CI run `45558227141`).
 - [x] Verify five repeated create/stop cycles exit every child process cleanly (CI run `45558227141`).
-- [ ] Exercise startup failure and cancelled-shutdown cleanup, including endpoint removal (new tests added; CI run `45579318423` pending).
+- [x] Exercise startup failure cleanup and cancelled-shutdown force termination; verify private IPC endpoint directory removal on Unix (Linux and Windows CI run `45579318423`).
 - [ ] Verify no stale worker messages are applied after replacement.
+
+W4 failure-containment tests pass on Linux and Windows CI (`45558227141`, `45579318423`): worker A can be killed during active simulation while worker B remains healthy and advances independently; five repeated start/stop cycles exit every child; startup failure and cancelled shutdown terminate/clean up the worker, with Unix private IPC directory cleanup verified. This is lifecycle and process-isolation evidence for the prototype, not yet proof of production OS resource quotas or native backend fault containment.
 
 ### W5 — Two-instance isolation
 - [ ] Run two separate worker processes with different worlds and profiles.
