@@ -20,6 +20,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
     private readonly BlockingCollection<WorkItem> _commands = new(new ConcurrentQueue<WorkItem>(), QueueCapacity);
     private readonly AutoResetEvent _wake = new(false);
     private readonly Channel<JsonElement> _snapshots = Channel.CreateBounded<JsonElement>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = true });
+    private readonly Channel<JsonElement> _physicsEvents = Channel.CreateBounded<JsonElement>(new BoundedChannelOptions(WorkerProtocolConstants.DefaultMaxQueuedEvents) { FullMode = BoundedChannelFullMode.Wait, SingleReader = true, SingleWriter = true });
     private readonly Thread _simulationThread;
     private volatile bool _running;
     private volatile bool _faulted;
@@ -44,6 +45,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
     public bool IsFaulted => _faulted;
     public int QueueDepth => _commands.Count;
     public ChannelReader<JsonElement> Snapshots => _snapshots.Reader;
+    public ChannelReader<JsonElement> PhysicsEvents => _physicsEvents.Reader;
     public long TickCount => Interlocked.Read(ref _tickCount);
 
     public void SetWorldId(Guid worldId)
@@ -129,7 +131,9 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
             FailQueued(WorkerErrorCode.WorkerStopping, "Worker simulation is stopping.");
             // Dispose the backend on the same dedicated thread that owned it.
             try { _adapter.Dispose(); } catch { }
-            _snapshots.Writer.TryComplete(_faulted ? new InvalidOperationException("Simulation runtime faulted.") : null);
+            Exception? completionError = _faulted ? new InvalidOperationException("Simulation runtime faulted.") : null;
+            _snapshots.Writer.TryComplete(completionError);
+            _physicsEvents.Writer.TryComplete(completionError);
         }
     }
 
@@ -142,6 +146,11 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
                 ? reportedTick
                 : TickCount + 1;
             Interlocked.Exchange(ref _tickCount, currentTick);
+            foreach (JsonElement physicsEvent in _adapter.DrainEvents())
+            {
+                if (!_physicsEvents.Writer.TryWrite(physicsEvent.Clone()))
+                    throw new WorkerCommandException(WorkerErrorCode.QueueFull, "Critical physics event queue overflowed; event delivery cannot be guaranteed.");
+            }
             if (TickCount - _lastSnapshotTick >= 2)
             {
                 _lastSnapshotTick = TickCount;
