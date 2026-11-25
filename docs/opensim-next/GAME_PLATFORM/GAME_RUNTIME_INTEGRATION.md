@@ -146,3 +146,7 @@ The real-process acceptance runner uses the production Worker executable and Sup
 The standalone runtime accepts these bounded host settings: `Enabled` (default `false`), `WorkerAssemblyPath` (required only when enabled), startup/request/shutdown deadlines, heartbeat interval/timeout, and `MaximumActiveInstances` (default 16, maximum 256). A disabled runtime can be constructed without a worker deployment path and returns `WorkerUnavailable` for start requests.
 
 A graceful stop returns a typed `WorkerUnavailable` result if the worker cannot stop cleanly; the instance is marked `Faulted`, its reservation is released, and the session is disposed. Caller cancellation remains cancellation (rather than being converted to a success or generic error) after cleanup is attempted. Faulted child processes are explicitly killed and awaited during supervisor disposal.
+
+## 9. Deployment bundle
+
+CI publishes a `opensim-next-game-runtime` artifact containing `GameRuntime.dll`, the Supervisor and Protocol assemblies, required OpenSim contract assemblies, and a `worker/` directory with the Worker executable and its .NET runtime metadata. Configure `WorkerAssemblyPath` to the absolute path of `worker/GamePhysicsWorker.dll` under the extracted bundle directory. Keep the bundle directory private to the OpenSim service identity; the Worker IPC endpoint remains local and is not a public listener.
