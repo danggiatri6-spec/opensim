@@ -282,4 +282,30 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     Assert(supervisor.State == WorkerLifecycleState.Faulted, "supervisor detects unexpected worker process exit");
 }
 
+var failingRuntime = new WorkerSimulationRuntime(new ThrowingStepAdapter());
+await failingRuntime.ExecuteAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Balanced" }));
+await failingRuntime.ExecuteAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
+using (var runtimeFaultTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+{
+    while (!failingRuntime.IsFaulted)
+        await Task.Delay(20, runtimeFaultTimeout.Token);
+}
+await failingRuntime.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+Assert(true, "simulation thread exits and joins after an injected backend step failure");
+
 Console.WriteLine("All Game Physics Worker Supervisor tests passed.");
+
+sealed class ThrowingStepAdapter : IPhysicsWorldAdapter
+{
+    public JsonElement CreateWorld(Guid worldId, JsonElement configuration) =>
+        JsonSerializer.SerializeToElement(new { state = "Created", worldId });
+    public JsonElement CreateBody(JsonElement body) => body.Clone();
+    public JsonElement SetVelocity(JsonElement command) => command.Clone();
+    public JsonElement ApplyImpulse(JsonElement command) => command.Clone();
+    public JsonElement Step(JsonElement command) => throw new InvalidOperationException("Injected backend failure.");
+    public JsonElement GetSnapshot() => JsonSerializer.SerializeToElement(new { tick = 0 });
+    public JsonElement DestroyBody(JsonElement command) => command.Clone();
+    public JsonElement StopWorld() => JsonSerializer.SerializeToElement(new { state = "Stopped" });
+    public IReadOnlyList<JsonElement> DrainEvents() => Array.Empty<JsonElement>();
+    public void Dispose() { }
+}
