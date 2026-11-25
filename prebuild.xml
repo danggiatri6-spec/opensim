@@ -108,7 +108,7 @@
       <Reference name="OpenSim.Framework.Console" path ="../../../bin"/>
       <Reference name="OpenSim.Framework.Servers.HttpServer" path ="../../../bin"/>
       <Reference name="Nini" path ="../../../bin"/>
-      <Reference name="log4net" path ="../../../bin"/>
+      <Reference name="log4net" path ="../../../bin"/>\n      <Files>\n        <Match pattern="*.cs" recurse="false"/>\n      </Files>
     </Project>
 
     <Project name="OpenSim.Framework.Monitoring" path="OpenSim/Framework/Monitoring" type="Library">
@@ -449,7 +449,7 @@
       <Reference name="OpenSim.Services.Base"/>
       <Reference name="OpenSim.Data"/>
       <Reference name="Nini"/>
-      <Reference name="log4net"/>
+      <Reference name="log4net"/>\n      <Files>\n        <Match pattern="*.cs" recurse="false"/>\n        <Match path="Properties" pattern="*.cs" recurse="false"/>\n      </Files>
 
     </Project>
 
