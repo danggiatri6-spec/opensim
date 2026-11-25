@@ -160,7 +160,7 @@ namespace OpenSim.Services.Interfaces
 
         public static GameProjectValidationResult Validate(GameProjectManifest manifest)
         {
-            List<string> errors = new();
+            List<string> errors = new List<string>();
 
             if (manifest == null)
                 return GameProjectValidationResult.Invalid("Manifest is required.");
@@ -182,11 +182,28 @@ namespace OpenSim.Services.Interfaces
             }
             else
             {
+                if (string.IsNullOrWhiteSpace(manifest.Settings.GameMode)
+                    || manifest.Settings.GameMode.Trim().Length > 32)
+                    errors.Add("GameMode must contain between 1 and 32 characters.");
+
                 if (manifest.Settings.MaxPlayers < 1 || manifest.Settings.MaxPlayers > 256)
                     errors.Add("MaxPlayers must be between 1 and 256.");
 
                 if (manifest.Settings.Tags == null || manifest.Settings.Tags.Count > MaximumTags)
+                {
                     errors.Add("Project tags exceed the allowed limit.");
+                }
+                else
+                {
+                    foreach (string tag in manifest.Settings.Tags)
+                    {
+                        if (string.IsNullOrWhiteSpace(tag) || tag.Trim().Length > 32)
+                        {
+                            errors.Add("Each project tag must contain between 1 and 32 characters.");
+                            break;
+                        }
+                    }
+                }
 
                 if (manifest.Settings.Visibility != "private"
                     && manifest.Settings.Visibility != "unlisted"
@@ -196,7 +213,7 @@ namespace OpenSim.Services.Interfaces
 
             if (manifest.Worlds != null)
             {
-                HashSet<UUID> worldIDs = new();
+                HashSet<UUID> worldIDs = new HashSet<UUID>();
 
                 foreach (GameWorldDefinition world in manifest.Worlds)
                 {
@@ -211,6 +228,9 @@ namespace OpenSim.Services.Interfaces
 
                     if (string.IsNullOrWhiteSpace(world.Name) || world.Name.Trim().Length > 80)
                         errors.Add("World names must contain between 1 and 80 characters.");
+
+                    if (world.Description != null && world.Description.Length > 2000)
+                        errors.Add("World descriptions cannot exceed 2000 characters.");
 
                     if (world.SizeX < 16 || world.SizeX > 4096
                         || world.SizeY < 16 || world.SizeY > 4096)
@@ -227,14 +247,32 @@ namespace OpenSim.Services.Interfaces
                         foreach (GameSpawnPoint spawn in world.SpawnPoints)
                         {
                             if (spawn == null
-                                || double.IsNaN(spawn.X) || double.IsInfinity(spawn.X)
-                                || double.IsNaN(spawn.Y) || double.IsInfinity(spawn.Y)
-                                || double.IsNaN(spawn.Z) || double.IsInfinity(spawn.Z)
+                                || !IsFinite(spawn.X) || !IsFinite(spawn.Y) || !IsFinite(spawn.Z)
+                                || !IsFinite(spawn.RotationX) || !IsFinite(spawn.RotationY)
+                                || !IsFinite(spawn.RotationZ) || !IsFinite(spawn.RotationW)
                                 || spawn.X < 0 || spawn.X > world.SizeX
                                 || spawn.Y < 0 || spawn.Y > world.SizeY
                                 || spawn.Z < -4096 || spawn.Z > 4096)
                             {
-                                errors.Add("Spawn point coordinates are invalid or outside world bounds.");
+                                errors.Add("Spawn point coordinates or rotation values are invalid.");
+                                break;
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(spawn.Name) && spawn.Name.Length > 64)
+                            {
+                                errors.Add("Spawn point names cannot exceed 64 characters.");
+                                break;
+                            }
+
+                            double rotationLengthSquared =
+                                spawn.RotationX * spawn.RotationX
+                                + spawn.RotationY * spawn.RotationY
+                                + spawn.RotationZ * spawn.RotationZ
+                                + spawn.RotationW * spawn.RotationW;
+
+                            if (rotationLengthSquared < 0.81 || rotationLengthSquared > 1.21)
+                            {
+                                errors.Add("Spawn point rotation must be a normalized quaternion.");
                                 break;
                             }
                         }
@@ -246,9 +284,10 @@ namespace OpenSim.Services.Interfaces
                         {
                             if (asset == null || asset.AssetID == UUID.Zero
                                 || string.IsNullOrWhiteSpace(asset.AssetType)
-                                || asset.AssetType.Length > 64)
+                                || asset.AssetType.Trim().Length > 64
+                                || (asset.Usage != null && asset.Usage.Length > 128))
                             {
-                                errors.Add("Asset references must contain a valid asset ID and type.");
+                                errors.Add("Asset references must contain a valid asset ID, type and bounded usage.");
                                 break;
                             }
                         }
@@ -256,14 +295,19 @@ namespace OpenSim.Services.Interfaces
                 }
 
                 if (manifest.Settings != null
-                    && manifest.Settings.DefaultWorldID != UUID.Zero
-                    && !worldIDs.Contains(manifest.Settings.DefaultWorldID))
+                    && (manifest.Settings.DefaultWorldID == UUID.Zero
+                        || !worldIDs.Contains(manifest.Settings.DefaultWorldID)))
                     errors.Add("DefaultWorldID must reference a world in this project.");
             }
 
             return errors.Count == 0
                 ? GameProjectValidationResult.Valid()
                 : new GameProjectValidationResult { IsValid = false, Errors = errors };
+        }
+
+        private static bool IsFinite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
         }
     }
 
