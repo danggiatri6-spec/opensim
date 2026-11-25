@@ -45,6 +45,9 @@ jobs:
       - name: Run Game Physics Worker protocol tests
         run: dotnet run --configuration Release --project tools/game-physics-worker-protocol/tests/GamePhysicsWorker.Protocol.Tests.csproj
 
+      - name: Run Game Physics Worker process integration tests
+        run: dotnet run --configuration Release --project tools/game-physics-worker/tests/GamePhysicsWorker.Integration.Tests.csproj
+
       - name: Verify UDP test assembly was compiled
         run: |
           test -f bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
