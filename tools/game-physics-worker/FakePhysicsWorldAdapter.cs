@@ -176,6 +176,7 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
                 position = ToJson(x.Position),
                 velocity = ToJson(x.Velocity),
                 isStatic = x.IsStatic,
+                isTrigger = x.IsTrigger,
                 shape = x.Shape
             }).ToArray()
         });
@@ -185,14 +186,17 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
     {
         EnsureRunning();
         Guid bodyId = ReadGuid(command, "bodyId");
-        if (!_bodies.Remove(bodyId))
+        if (!_bodies.Remove(bodyId, out BodyState? removed))
             throw new WorkerCommandException(WorkerErrorCode.ObjectNotFound, "Body ID was not found.");
         foreach (var pair in _activePairs.Where(x => x.A == bodyId || x.B == bodyId).ToArray())
         {
             _activePairs.Remove(pair);
-            BodyState? other = _bodies.GetValueOrDefault(pair.A == bodyId ? pair.B : pair.A);
-            if (other is not null)
-                _pendingEvents.Enqueue(CreatePairEvent(pair, "ContactEnd", "TriggerExit", other, null));
+            bool trigger = removed.IsTrigger ||
+                (_bodies.GetValueOrDefault(pair.A == bodyId ? pair.B : pair.A)?.IsTrigger ?? false);
+            _pendingEvents.Enqueue(JsonSerializer.SerializeToElement(new
+            {
+                type = trigger ? "TriggerExit" : "ContactEnd", bodyA = pair.A, bodyB = pair.B, tick = _tick
+            }));
         }
         return JsonSerializer.SerializeToElement(new { bodyId, destroyed = true });
     }
@@ -231,9 +235,6 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         _activePairs.Clear();
         foreach (var pair in current) _activePairs.Add(pair);
     }
-
-    private static JsonElement CreatePairEvent((Guid A, Guid B) pair, string contactType, string triggerType, BodyState other, BodyState? removed) =>
-        JsonSerializer.SerializeToElement(new { type = other.IsTrigger || (removed?.IsTrigger ?? false) ? triggerType : contactType, bodyA = pair.A, bodyB = pair.B });
 
     public JsonElement StopWorld()
     {
