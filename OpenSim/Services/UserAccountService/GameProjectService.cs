@@ -1,0 +1,324 @@
+/*
+ * OpenSim-next Game Project service.
+ *
+ * This service owns creator authorization and manifest validation. It only
+ * persists project definitions; it never creates or mutates live Regions.
+ */
+
+using System;
+using System.Collections.Generic;
+using System.Text.Json;
+using Nini.Config;
+using OpenMetaverse;
+using OpenSim.Data;
+using OpenSim.Services.Base;
+using OpenSim.Services.Interfaces;
+
+namespace OpenSim.Services.UserAccountService
+{
+    public sealed class GameProjectService : ServiceBase, IGameProjectService
+    {
+        private const int MaximumPageSize = 100;
+        private readonly IGameProjectData m_Database;
+
+        public GameProjectService(IConfigSource config) : base(config)
+        {
+            string dllName = string.Empty;
+            string connectionString = string.Empty;
+
+            IConfig databaseConfig = config.Configs["DatabaseService"];
+            if (databaseConfig != null)
+            {
+                dllName = databaseConfig.GetString("StorageProvider", string.Empty);
+                connectionString = databaseConfig.GetString("ConnectionString", string.Empty);
+            }
+
+            IConfig projectConfig = config.Configs["GameProjectService"];
+            if (projectConfig == null)
+                throw new Exception("No GameProjectService configuration");
+
+            dllName = projectConfig.GetString("StorageProvider", dllName);
+            connectionString = projectConfig.GetString("ConnectionString", connectionString);
+
+            if (string.IsNullOrWhiteSpace(dllName))
+                throw new Exception("No GameProjectService StorageProvider configured");
+            if (string.IsNullOrWhiteSpace(connectionString))
+                throw new Exception("No GameProjectService ConnectionString configured");
+
+            m_Database = LoadPlugin<IGameProjectData>(dllName, new object[] { connectionString });
+            if (m_Database == null)
+                throw new Exception("Could not load an IGameProjectData provider");
+        }
+
+        // Injection constructor for provider-level tests and embedded hosts.
+        public GameProjectService(IGameProjectData database) : base(null)
+        {
+            m_Database = database ?? throw new ArgumentNullException(nameof(database));
+        }
+
+        public GameProjectResult CreateProject(UUID authenticatedOwnerID, string name, string description)
+        {
+            if (authenticatedOwnerID == UUID.Zero)
+                return Failure(GameProjectError.Forbidden, "An authenticated creator is required.");
+
+            if (!IsValidText(name, 1, 80))
+                return Failure(GameProjectError.InvalidData, "Project name must contain between 1 and 80 characters.");
+
+            if (!IsValidText(description ?? string.Empty, 0, 2000))
+                return Failure(GameProjectError.InvalidData, "Project description cannot exceed 2000 characters.");
+
+            DateTime now = DateTime.UtcNow;
+            GameProjectData data = new GameProjectData
+            {
+                ProjectID = UUID.Random(),
+                OwnerID = authenticatedOwnerID,
+                Name = name.Trim(),
+                Description = (description ?? string.Empty).Trim(),
+                Status = (int)GameProjectStatus.Draft,
+                SchemaVersion = GameProjectManifestValidator.CurrentSchemaVersion,
+                CurrentRevision = 0,
+                CreatedUTC = now,
+                UpdatedUTC = now
+            };
+
+            try
+            {
+                if (!m_Database.CreateProject(data))
+                    return Failure(GameProjectError.StorageUnavailable, "The project could not be created.");
+
+                return Success(ToProject(data));
+            }
+            catch
+            {
+                return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
+            }
+        }
+
+        public GameProjectResult GetProject(UUID authenticatedOwnerID, UUID projectID)
+        {
+            if (authenticatedOwnerID == UUID.Zero)
+                return Failure(GameProjectError.Forbidden, "An authenticated creator is required.");
+            if (projectID == UUID.Zero)
+                return Failure(GameProjectError.InvalidData, "Project ID is required.");
+
+            try
+            {
+                GameProjectData data = m_Database.GetProject(projectID);
+                if (data == null || data.OwnerID != authenticatedOwnerID)
+                    return Failure(GameProjectError.NotFound, "Project was not found.");
+                return Success(ToProject(data));
+            }
+            catch
+            {
+                return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
+            }
+        }
+
+        public List<GameProject> GetOwnedProjects(UUID authenticatedOwnerID, int offset, int limit)
+        {
+            if (authenticatedOwnerID == UUID.Zero)
+                return new List<GameProject>();
+
+            if (offset < 0) offset = 0;
+            if (limit < 1) limit = 1;
+            if (limit > MaximumPageSize) limit = MaximumPageSize;
+
+            List<GameProject> result = new List<GameProject>();
+            try
+            {
+                List<GameProjectData> records = m_Database.GetProjectsByOwner(authenticatedOwnerID, offset, limit);
+                if (records == null) return result;
+
+                foreach (GameProjectData record in records)
+                {
+                    if (record != null && record.OwnerID == authenticatedOwnerID)
+                        result.Add(ToProject(record));
+                }
+            }
+            catch
+            {
+                // Listing has no typed error return in the current interface.
+                // Return an empty page; callers should log provider failures.
+            }
+            return result;
+        }
+
+        public GameProjectResult SaveDraft(
+            UUID authenticatedOwnerID,
+            UUID projectID,
+            long expectedCurrentRevision,
+            GameProjectManifest manifest)
+        {
+            if (authenticatedOwnerID == UUID.Zero)
+                return Failure(GameProjectError.Forbidden, "An authenticated creator is required.");
+            if (projectID == UUID.Zero || expectedCurrentRevision < 0)
+                return Failure(GameProjectError.InvalidData, "Project ID or expected revision is invalid.");
+
+            GameProjectValidationResult validation = GameProjectManifestValidator.Validate(manifest);
+            if (!validation.IsValid)
+                return Failure(GameProjectError.InvalidData, string.Join(" ", validation.Errors));
+
+            string json;
+            try
+            {
+                json = JsonSerializer.Serialize(manifest);
+            }
+            catch
+            {
+                return Failure(GameProjectError.InvalidData, "Manifest could not be serialized.");
+            }
+
+            if (json.Length > GameProjectManifestValidator.MaximumManifestCharacters)
+                return Failure(GameProjectError.InvalidData, "Manifest exceeds the maximum serialized size.");
+
+            try
+            {
+                GameProjectData current = m_Database.GetProject(projectID);
+                if (current == null)
+                    return Failure(GameProjectError.NotFound, "Project was not found.");
+                if (current.OwnerID != authenticatedOwnerID)
+                    return Failure(GameProjectError.NotFound, "Project was not found.");
+                if (current.Status != (int)GameProjectStatus.Draft)
+                    return Failure(GameProjectError.Forbidden, "Only draft projects can be changed.");
+                if (current.CurrentRevision != expectedCurrentRevision)
+                    return Failure(GameProjectError.RevisionConflict, "Project revision has changed. Reload before saving.");
+
+                GameProjectRevisionData revision = new GameProjectRevisionData
+                {
+                    ProjectID = projectID,
+                    Revision = expectedCurrentRevision + 1,
+                    SchemaVersion = manifest.SchemaVersion,
+                    ManifestJson = json,
+                    CreatedBy = authenticatedOwnerID,
+                    CreatedUTC = DateTime.UtcNow
+                };
+
+                if (!m_Database.SaveRevision(revision, authenticatedOwnerID,
+                    expectedCurrentRevision, DateTime.UtcNow))
+                    return Failure(GameProjectError.RevisionConflict, "Project revision has changed. Reload before saving.");
+
+                GameProjectData updated = m_Database.GetProject(projectID);
+                return updated == null
+                    ? Failure(GameProjectError.StorageUnavailable, "Saved project could not be reloaded.")
+                    : Success(ToProject(updated));
+            }
+            catch
+            {
+                return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
+            }
+        }
+
+        public GameProjectRevision GetRevision(UUID authenticatedOwnerID, UUID projectID, long revision)
+        {
+            if (authenticatedOwnerID == UUID.Zero || projectID == UUID.Zero || revision < 1)
+                return null;
+
+            try
+            {
+                GameProjectData project = m_Database.GetProject(projectID);
+                if (project == null || project.OwnerID != authenticatedOwnerID)
+                    return null;
+
+                GameProjectRevisionData data = m_Database.GetRevision(projectID, revision);
+                if (data == null || data.CreatedBy != authenticatedOwnerID)
+                    return null;
+
+                return new GameProjectRevision
+                {
+                    ProjectID = data.ProjectID,
+                    Revision = data.Revision,
+                    SchemaVersion = data.SchemaVersion,
+                    ManifestJson = data.ManifestJson,
+                    CreatedBy = data.CreatedBy,
+                    CreatedUTC = data.CreatedUTC
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public GameProjectResult UpdateMetadata(
+            UUID authenticatedOwnerID,
+            UUID projectID,
+            long expectedCurrentRevision,
+            string name,
+            string description)
+        {
+            if (authenticatedOwnerID == UUID.Zero)
+                return Failure(GameProjectError.Forbidden, "An authenticated creator is required.");
+            if (projectID == UUID.Zero || expectedCurrentRevision < 0)
+                return Failure(GameProjectError.InvalidData, "Project ID or expected revision is invalid.");
+            if (!IsValidText(name, 1, 80) || !IsValidText(description ?? string.Empty, 0, 2000))
+                return Failure(GameProjectError.InvalidData, "Project name or description is invalid.");
+
+            try
+            {
+                GameProjectData current = m_Database.GetProject(projectID);
+                if (current == null || current.OwnerID != authenticatedOwnerID)
+                    return Failure(GameProjectError.NotFound, "Project was not found.");
+                if (current.Status != (int)GameProjectStatus.Draft)
+                    return Failure(GameProjectError.Forbidden, "Only draft projects can be changed.");
+                if (current.CurrentRevision != expectedCurrentRevision)
+                    return Failure(GameProjectError.RevisionConflict, "Project revision has changed.");
+
+                if (!m_Database.UpdateProjectMetadata(projectID, authenticatedOwnerID,
+                    expectedCurrentRevision, name.Trim(), (description ?? string.Empty).Trim(), DateTime.UtcNow))
+                    return Failure(GameProjectError.RevisionConflict, "Project revision has changed.");
+
+                return GetProject(authenticatedOwnerID, projectID);
+            }
+            catch
+            {
+                return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
+            }
+        }
+
+        public bool ArchiveProject(UUID authenticatedOwnerID, UUID projectID)
+        {
+            if (authenticatedOwnerID == UUID.Zero || projectID == UUID.Zero)
+                return false;
+
+            try
+            {
+                return m_Database.ArchiveProject(projectID, authenticatedOwnerID, DateTime.UtcNow);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsValidText(string value, int minimum, int maximum)
+        {
+            return value != null && value.Trim().Length >= minimum && value.Trim().Length <= maximum;
+        }
+
+        private static GameProject ToProject(GameProjectData data)
+        {
+            return new GameProject
+            {
+                ProjectID = data.ProjectID,
+                OwnerID = data.OwnerID,
+                Name = data.Name,
+                Description = data.Description,
+                Status = (GameProjectStatus)data.Status,
+                SchemaVersion = data.SchemaVersion,
+                CurrentRevision = data.CurrentRevision,
+                CreatedUTC = data.CreatedUTC,
+                UpdatedUTC = data.UpdatedUTC
+            };
+        }
+
+        private static GameProjectResult Success(GameProject project)
+        {
+            return new GameProjectResult { Error = GameProjectError.None, Project = project };
+        }
+
+        private static GameProjectResult Failure(GameProjectError error, string message)
+        {
+            return new GameProjectResult { Error = error, Message = message };
+        }
+    }
+}
