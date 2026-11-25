@@ -48,6 +48,9 @@ jobs:
       - name: Run Game Physics Worker process integration tests
         run: dotnet run --configuration Release --project tools/game-physics-worker/tests/GamePhysicsWorker.Integration.Tests.csproj
 
+      - name: Run Game Physics Worker supervisor tests
+        run: dotnet run --configuration Release --project tools/game-physics-worker-supervisor/tests/GamePhysicsWorker.Supervisor.Tests.csproj
+
       - name: Verify UDP test assembly was compiled
         run: |
           test -f bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
@@ -62,3 +65,19 @@ jobs:
           name: opensim-next-udp-tests
           path: bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
           if-no-files-found: error
+
+  worker-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run Windows Named Pipes supervisor tests
+        run: dotnet run --configuration Release --project tools/game-physics-worker-supervisor/tests/GamePhysicsWorker.Supervisor.Tests.csproj
