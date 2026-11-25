@@ -39,6 +39,9 @@ jobs:
       - name: Build OpenSim
         run: dotnet build --configuration Release OpenSim.sln
 
+      - name: Run Game Platform validation and SQLite integration tests
+        run: dotnet run --configuration Release --project tools/game-project-test-runner/GameProjectTestRunner.csproj
+
       - name: Verify UDP test assembly was compiled
         run: |
           test -f bin/OpenSim.Region.ClientStack.LindenUDP.Tests.dll
