@@ -30,9 +30,17 @@ The `OpenSim.Services.Interfaces` Prebuild project has no explicit `<Files>` lis
    - Revision writes use a serializable transaction, owner/status check and compare-and-advance guard.
    - Provider opens a private connection per operation; it does not reuse the legacy SQLite static shared connection pattern.
 
+4. `docs/opensim-next/GAME_PLATFORM/CREATOR_ECONOMY.md`
+   - Defines creator-controlled access pricing, offers, memberships and game-scoped virtual goods.
+   - Defines creator-configurable quest, achievement, event and progression rewards.
+   - Separates external payments, platform credit, game currency, entitlements and creator revenue.
+   - Specifies server-authoritative transactions, idempotency, immutable ledger records, player disclosures and cross-game isolation.
+   - This is a design specification only; no real-money payments, wallets, payouts or reward runtime have been implemented.
+
 ## Not yet implemented
 
 - Concrete service implementation and provider wiring/configuration.
+- Creator Economy runtime: offers, reward rules, game-scoped wallets, ledger, entitlements and reporting.
 - A concrete `IGameProjectService` implementation.
 - HTTP/Capability endpoints and authenticated Creator identity binding.
 - Automated unit tests and a full Prebuild + .NET 8 build.
