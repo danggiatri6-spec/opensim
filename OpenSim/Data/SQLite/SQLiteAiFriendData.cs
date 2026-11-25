@@ -68,7 +68,7 @@ namespace OpenSim.Data.SQLite
             if (x == null || x.CharacterId == Guid.Empty || string.IsNullOrWhiteSpace(x.DisplayName)
                 || x.DisplayName.Length > 64 || x.ProfileDescription == null || x.ProfileDescription.Length > 1000
                 || x.PersonaVersion < 1 || x.CreatedUtc.Kind != DateTimeKind.Utc
-                || x.UpdatedUtc.Kind != DateTimeKind.Utc || x.Status < 0 || x.Status > 2)
+                || x.UpdatedUtc.Kind != DateTimeKind.Utc || x.Status < 0 || x.Status > 3)
                 return false;
 
             using (SQLiteConnection c = OpenConnection())
