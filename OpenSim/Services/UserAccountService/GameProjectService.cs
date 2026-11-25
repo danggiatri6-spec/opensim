@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Data;
@@ -161,7 +162,9 @@ namespace OpenSim.Services.UserAccountService
             string json;
             try
             {
-                json = JsonSerializer.Serialize(manifest);
+                JsonSerializerOptions options = new JsonSerializerOptions();
+                options.Converters.Add(new OpenMetaverseUuidJsonConverter());
+                json = JsonSerializer.Serialize(manifest, options);
             }
             catch
             {
@@ -287,6 +290,25 @@ namespace OpenSim.Services.UserAccountService
             catch
             {
                 return false;
+            }
+        }
+
+        private sealed class OpenMetaverseUuidJsonConverter : JsonConverter<UUID>
+        {
+            public override UUID Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            {
+                if (reader.TokenType != JsonTokenType.String)
+                    throw new JsonException("UUID values must be strings.");
+                string value = reader.GetString();
+                UUID parsed;
+                if (!UUID.TryParse(value, out parsed))
+                    throw new JsonException("Invalid UUID value.");
+                return parsed;
+            }
+
+            public override void Write(Utf8JsonWriter writer, UUID value, JsonSerializerOptions options)
+            {
+                writer.WriteStringValue(value.ToString());
             }
         }
 
