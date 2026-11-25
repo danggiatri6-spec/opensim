@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Threading.Channels;
 using OpenSim.GamePhysics.WorkerProtocol;
 
 namespace OpenSim.GamePhysics.Worker;
@@ -18,6 +19,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
     private readonly IPhysicsWorldAdapter _adapter;
     private readonly BlockingCollection<WorkItem> _commands = new(new ConcurrentQueue<WorkItem>(), QueueCapacity);
     private readonly AutoResetEvent _wake = new(false);
+    private readonly Channel<JsonElement> _snapshots = Channel.CreateBounded<JsonElement>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true, SingleWriter = true });
     private readonly Thread _simulationThread;
     private volatile bool _running;
     private volatile bool _faulted;
@@ -41,6 +43,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
     public bool IsRunning => _running;
     public bool IsFaulted => _faulted;
     public int QueueDepth => _commands.Count;
+    public ChannelReader<JsonElement> Snapshots => _snapshots.Reader;
     public long TickCount => Interlocked.Read(ref _tickCount);
 
     public void SetWorldId(Guid worldId)
@@ -126,6 +129,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
             FailQueued(WorkerErrorCode.WorkerStopping, "Worker simulation is stopping.");
             // Dispose the backend on the same dedicated thread that owned it.
             try { _adapter.Dispose(); } catch { }
+            _snapshots.Writer.TryComplete(_faulted ? new InvalidOperationException("Simulation runtime faulted.") : null);
         }
     }
 
@@ -141,8 +145,8 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
             if (TickCount - _lastSnapshotTick >= 2)
             {
                 _lastSnapshotTick = TickCount;
-                // Snapshot publication is added with the duplex event channel in W3-B.
-                _ = snapshot;
+                // Keep only the newest state snapshot; stale snapshots have no gameplay-event semantics.
+                _snapshots.Writer.TryWrite(snapshot.Clone());
             }
         }
         catch
