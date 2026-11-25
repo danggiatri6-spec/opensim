@@ -39,6 +39,9 @@ jobs:
       - name: Build OpenSim
         run: dotnet build --configuration Release OpenSim.sln
 
+      - name: Run AI Friend domain tests
+        run: dotnet run --configuration Release --project tools/ai-friend-test-runner/AiFriend.TestRunner.csproj
+
       - name: Run Game Platform validation and SQLite integration tests
         run: dotnet run --configuration Release --project tools/game-project-test-runner/GameProjectTestRunner.csproj
 
