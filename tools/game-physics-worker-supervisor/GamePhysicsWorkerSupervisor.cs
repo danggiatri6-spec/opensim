@@ -169,9 +169,17 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
     }
 
-    public async Task<JsonElement> EchoAsync(JsonElement payload, CancellationToken cancellationToken = default)
+    public async Task<JsonElement> EchoAsync(JsonElement payload, CancellationToken cancellationToken = default) =>
+        await RequestAsync("Echo", payload, cancellationToken).ConfigureAwait(false);
+
+    public async Task<JsonElement> RequestAsync(
+        string operation,
+        JsonElement payload,
+        CancellationToken cancellationToken = default)
     {
-        using JsonDocument response = await SendRequestAsync("Echo", payload, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(operation))
+            throw new ArgumentException("Operation is required.", nameof(operation));
+        using JsonDocument response = await SendRequestAsync(operation, payload, cancellationToken).ConfigureAwait(false);
         return response.RootElement.GetProperty("payload").Clone();
     }
 
