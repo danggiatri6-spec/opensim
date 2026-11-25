@@ -115,6 +115,23 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
     Assert(snapshot.GetProperty("bodies").GetArrayLength() == 0, "fake adapter destroys bodies by opaque ID");
 
+    Guid realtimeBodyId = Guid.NewGuid();
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = realtimeBodyId, mass = 1f, shape = "Box",
+        position = new { x = 0f, y = 20f, z = 0f }
+    }));
+    JsonElement started = await supervisor.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
+    Assert(started.GetProperty("state").GetString() == "Running", "worker starts the background fixed-step simulation");
+    await Task.Delay(TimeSpan.FromMilliseconds(400));
+    JsonElement paused = await supervisor.RequestAsync("PauseSimulation", JsonSerializer.SerializeToElement(new { }));
+    snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+    long realtimeTicks = snapshot.GetProperty("tick").GetInt64();
+    Assert(paused.GetProperty("state").GetString() == "Paused" && realtimeTicks >= 8 &&
+        snapshot.GetProperty("bodies")[0].GetProperty("position").GetProperty("y").GetSingle() < 20f,
+        "background simulation advances at approximately 30 Hz and pauses cleanly");
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = realtimeBodyId }));
+
     Guid boundaryBodyId = Guid.NewGuid();
     await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
     {
