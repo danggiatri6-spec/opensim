@@ -364,7 +364,7 @@ W1 process and IPC prototype acceptance is complete: both local IPC transports p
 - [x] Use fixed 1/30-second manual steps, bounded catch-up of at most three steps per command, default gravity, and finite world/velocity bounds.
 - [x] Enforce the Balanced starting body cap (128 dynamic bodies) and a separate total body ceiling (384 including static bodies).
 - [x] Test gravity integration, mass-scaled impulse, body lifecycle, and rejection of a second world in one worker process.
-- [ ] Add more negative tests for invalid shapes, mass, body limits, and world bounds.
+- [x] Add negative tests for invalid shapes, non-positive mass, configured dynamic-body capacity, catch-up limit, and world-bound overflow with atomic tick rejection.
 - [ ] Add collision/contact and trigger semantics only after the adapter boundary and lifecycle are stable.
 - [ ] Test the BulletS unmanaged backend only inside the worker, after native lifecycle audit gates pass.
 - Never pass backend types across the IPC boundary.
