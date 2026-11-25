@@ -96,7 +96,10 @@ internal static class Program
         await using var runtime = new WorkerSimulationRuntime(new FakePhysicsWorldAdapter());
         runtime.SetWorldId(hello.WorldId);
         using var eventStop = new CancellationTokenSource();
-        Task eventPump = PublishSnapshotsAsync(runtime, stream, hello.WorldId, writerLock, eventStop.Token);
+        var eventSequence = new EventSequenceCounter();
+        Task eventPump = Task.WhenAll(
+            PublishSnapshotsAsync(runtime, stream, hello.WorldId, writerLock, eventSequence, eventStop.Token),
+            PublishPhysicsEventsAsync(runtime, stream, hello.WorldId, writerLock, eventSequence, eventStop.Token));
         await WriteResponseAsync(stream, hello, true, null, JsonSerializer.SerializeToElement(new { state = "Ready" }), writerLock);
 
         long lastSequence = 1;
@@ -190,26 +193,50 @@ internal static class Program
 
     private static async Task PublishSnapshotsAsync(
         WorkerSimulationRuntime runtime, Stream stream, Guid worldId,
-        SemaphoreSlim writerLock, CancellationToken cancellationToken)
+        SemaphoreSlim writerLock, EventSequenceCounter sequence, CancellationToken cancellationToken)
     {
-        long eventSequence = 0;
         await foreach (JsonElement snapshot in runtime.Snapshots.ReadAllAsync(cancellationToken).ConfigureAwait(false))
         {
+            await WriteEventAsync(stream, worldId, JsonSerializer.SerializeToElement(new { type = "Snapshot", snapshot }),
+                WorkerProtocolConstants.DefaultMaxSnapshotFrameBytes, writerLock, sequence, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task PublishPhysicsEventsAsync(
+        WorkerSimulationRuntime runtime, Stream stream, Guid worldId,
+        SemaphoreSlim writerLock, EventSequenceCounter sequence, CancellationToken cancellationToken)
+    {
+        await foreach (JsonElement physicsEvent in runtime.PhysicsEvents.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+        {
+            await WriteEventAsync(stream, worldId, physicsEvent,
+                WorkerProtocolConstants.DefaultMaxCommandFrameBytes, writerLock, sequence, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task WriteEventAsync(
+        Stream stream, Guid worldId, JsonElement payload, int maxFrameBytes,
+        SemaphoreSlim writerLock, EventSequenceCounter sequence, CancellationToken cancellationToken)
+    {
+        await writerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            long next = ++sequence.Value;
             var message = new WorkerProtocolEnvelope
             {
                 Kind = WorkerMessageKind.Event,
                 WorldId = worldId,
-                Sequence = eventSequence + 1,
-                EventSequence = ++eventSequence,
-                Payload = JsonSerializer.SerializeToElement(new { type = "Snapshot", snapshot })
+                Sequence = next,
+                EventSequence = next,
+                Payload = payload
             };
             byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(message, JsonOptions);
-            await writerLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await WorkerFrameCodec.WriteAsync(stream, bytes, WorkerProtocolConstants.DefaultMaxSnapshotFrameBytes, cancellationToken).ConfigureAwait(false);
-            }
-            finally { writerLock.Release(); }
+            await WorkerFrameCodec.WriteAsync(stream, bytes, maxFrameBytes, cancellationToken).ConfigureAwait(false);
         }
+        finally { writerLock.Release(); }
+    }
+
+    private sealed class EventSequenceCounter
+    {
+        public long Value;
     }
 }
