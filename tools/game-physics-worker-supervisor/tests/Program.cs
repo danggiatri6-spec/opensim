@@ -201,6 +201,7 @@ await using (GamePhysicsWorkerSupervisor supervisor =
         "destroying an overlapping trigger emits a matching trigger-exit event");
     await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = triggerBodyId }));
 
+    snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
     long tickBeforeBoundaryTest = snapshot.GetProperty("tick").GetInt64();
     Guid boundaryBodyId = Guid.NewGuid();
     await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
