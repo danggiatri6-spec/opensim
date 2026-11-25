@@ -234,8 +234,8 @@ namespace OpenSim.Region.OptionalModules.World.NPC.AIFriend
     public interface IAiFriendRelationshipStore
     {
         AiFriendRelationship Get(Guid authenticatedUserId, Guid characterId);
-        AiFriendRelationship Create(AiFriendRelationship relationship);
-        AiFriendRelationship Update(AiFriendRelationship relationship, long expectedVersion);
+        AiFriendRelationship Create(Guid authenticatedUserId, AiFriendRelationship relationship);
+        AiFriendRelationship Update(Guid authenticatedUserId, AiFriendRelationship relationship, long expectedVersion);
         IList<AiFriendMemory> GetMemories(Guid authenticatedUserId, Guid relationshipId, int limit);
         AiFriendMemory AddMemory(Guid authenticatedUserId, AiFriendMemory memory);
         bool DeleteMemory(Guid authenticatedUserId, Guid relationshipId, Guid memoryId);
