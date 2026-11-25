@@ -62,6 +62,31 @@ Assert(failed.Error == GameInstanceError.WorkerUnavailable, "worker startup fail
 GameInstanceResult retry = await retryRuntime.StartInstanceAsync(owner, projectId, 1);
 Assert(retry.Success, "startup failure releases its reservation");
 
+var workerAssemblyPath = Path.GetFullPath(Path.Combine(
+    AppContext.BaseDirectory,
+    "../../../../../game-physics-worker/bin/Release/net8.0/GamePhysicsWorker.dll"));
+Assert(File.Exists(workerAssemblyPath), "real worker assembly is built for process-level acceptance");
+var realOptions = new GameRuntimeOptions
+{
+    Enabled = true,
+    WorkerAssemblyPath = workerAssemblyPath,
+    StartupTimeout = TimeSpan.FromSeconds(15),
+    RequestTimeout = TimeSpan.FromSeconds(5),
+    ShutdownTimeout = TimeSpan.FromSeconds(10),
+    HeartbeatInterval = TimeSpan.FromSeconds(1),
+    HeartbeatTimeout = TimeSpan.FromSeconds(3)
+};
+await using (var realRuntime = new GameRuntimeService(projects, new GamePhysicsWorkerFactory(realOptions), realOptions))
+{
+    GameInstanceResult realStarted = await realRuntime.StartInstanceAsync(owner, projectId, 1);
+    Assert(realStarted.Success && realStarted.Instance?.State == GameInstanceState.Running,
+        "real child Worker authenticates, creates its world, and starts simulation");
+    await Task.Delay(250);
+    GameInstanceResult realStopped = await realRuntime.StopInstanceAsync(owner, realStarted.Instance!.InstanceID);
+    Assert(realStopped.Success && realStopped.Instance?.State == GameInstanceState.Stopped,
+        "real child Worker stops its world, shuts down, and is reaped");
+}
+
 Console.WriteLine("PASS: Game Runtime ownership, immutable revision validation, default world, duplicate reservation, stop/restart, fault propagation, and startup rollback.");
 
 sealed class FakeProjectService : IGameProjectService
