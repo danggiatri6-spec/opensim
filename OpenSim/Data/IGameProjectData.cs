@@ -51,6 +51,7 @@ namespace OpenSim.Data
             UUID projectID,
             UUID ownerID,
             long expectedCurrentRevision,
+            DateTime expectedUpdatedUTC,
             string name,
             string description,
             DateTime updatedUTC);
