@@ -33,6 +33,11 @@ namespace OpenSim.Data.SQLite
         {
             SQLiteConnection connection = new SQLiteConnection(_connectionString);
             connection.Open();
+            using (SQLiteCommand pragma = connection.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA foreign_keys=ON";
+                pragma.ExecuteNonQuery();
+            }
             return connection;
         }
 
@@ -62,26 +67,62 @@ namespace OpenSim.Data.SQLite
         {
             if (x == null || x.CharacterId == Guid.Empty || string.IsNullOrWhiteSpace(x.DisplayName)
                 || x.DisplayName.Length > 64 || x.ProfileDescription == null || x.ProfileDescription.Length > 1000
-                || x.PersonaVersion < 1)
+                || x.PersonaVersion < 1 || x.CreatedUtc.Kind != DateTimeKind.Utc
+                || x.UpdatedUtc.Kind != DateTimeKind.Utc || x.Status < 0 || x.Status > 2)
                 return false;
 
             using (SQLiteConnection c = OpenConnection())
-            using (SQLiteCommand q = c.CreateCommand())
+            using (SQLiteTransaction transaction = c.BeginTransaction(IsolationLevel.Serializable))
             {
-                q.CommandText = @"INSERT OR REPLACE INTO AiFriendCharacters
+                int updated;
+                using (SQLiteCommand q = c.CreateCommand())
+                {
+                    q.Transaction = transaction;
+                    q.CommandText = @"UPDATE AiFriendCharacters SET
+DisplayName=@name,ProfileDescription=@profile,PersonaVersion=@persona,
+AppearanceAssetID=@appearance,VoiceProfileID=@voice,PublisherID=@publisher,
+Status=@status,UpdatedUTC=@updated
+WHERE CharacterID=@id";
+                    q.Parameters.AddWithValue("@id", Id(x.CharacterId));
+                    q.Parameters.AddWithValue("@name", x.DisplayName);
+                    q.Parameters.AddWithValue("@profile", x.ProfileDescription);
+                    q.Parameters.AddWithValue("@persona", x.PersonaVersion);
+                    q.Parameters.AddWithValue("@appearance", Id(x.AppearanceAssetId));
+                    q.Parameters.AddWithValue("@voice", Id(x.VoiceProfileId));
+                    q.Parameters.AddWithValue("@publisher", Id(x.PublisherId));
+                    q.Parameters.AddWithValue("@status", x.Status);
+                    q.Parameters.AddWithValue("@updated", Date(x.UpdatedUtc));
+                    updated = q.ExecuteNonQuery();
+                }
+
+                if (updated == 0)
+                {
+                    using (SQLiteCommand q = c.CreateCommand())
+                    {
+                        q.Transaction = transaction;
+                        q.CommandText = @"INSERT INTO AiFriendCharacters
 (CharacterID,DisplayName,ProfileDescription,PersonaVersion,AppearanceAssetID,VoiceProfileID,PublisherID,Status,CreatedUTC,UpdatedUTC)
 VALUES (@id,@name,@profile,@persona,@appearance,@voice,@publisher,@status,@created,@updated)";
-                q.Parameters.AddWithValue("@id", Id(x.CharacterId));
-                q.Parameters.AddWithValue("@name", x.DisplayName);
-                q.Parameters.AddWithValue("@profile", x.ProfileDescription);
-                q.Parameters.AddWithValue("@persona", x.PersonaVersion);
-                q.Parameters.AddWithValue("@appearance", Id(x.AppearanceAssetId));
-                q.Parameters.AddWithValue("@voice", Id(x.VoiceProfileId));
-                q.Parameters.AddWithValue("@publisher", Id(x.PublisherId));
-                q.Parameters.AddWithValue("@status", x.Status);
-                q.Parameters.AddWithValue("@created", Date(x.CreatedUtc));
-                q.Parameters.AddWithValue("@updated", Date(x.UpdatedUtc));
-                return q.ExecuteNonQuery() == 1;
+                        q.Parameters.AddWithValue("@id", Id(x.CharacterId));
+                        q.Parameters.AddWithValue("@name", x.DisplayName);
+                        q.Parameters.AddWithValue("@profile", x.ProfileDescription);
+                        q.Parameters.AddWithValue("@persona", x.PersonaVersion);
+                        q.Parameters.AddWithValue("@appearance", Id(x.AppearanceAssetId));
+                        q.Parameters.AddWithValue("@voice", Id(x.VoiceProfileId));
+                        q.Parameters.AddWithValue("@publisher", Id(x.PublisherId));
+                        q.Parameters.AddWithValue("@status", x.Status);
+                        q.Parameters.AddWithValue("@created", Date(x.CreatedUtc));
+                        q.Parameters.AddWithValue("@updated", Date(x.UpdatedUtc));
+                        if (q.ExecuteNonQuery() != 1)
+                        {
+                            transaction.Rollback();
+                            return false;
+                        }
+                    }
+                }
+
+                transaction.Commit();
+                return true;
             }
         }
 
