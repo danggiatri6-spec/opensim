@@ -22,11 +22,17 @@ The active branch uses Prebuild to generate `OpenSim.sln`; the solution file is 
 
 The `OpenSim.Data` project explicitly includes root-level `*.cs` files, so `IGameProjectData.cs` is covered by its existing source inclusion rule.
 
-The `OpenSim.Services.Interfaces` Prebuild project has no explicit `<Files>` list. Confirm generated project inclusion during the first local Prebuild run before treating the new contracts as build-verified.
+The `OpenSim.Services.Interfaces` Prebuild project has no explicit `<Files>` list. Confirm generated project inclusion during the first local Prebuild run before treating the new contracts as build-verified. The `OpenSim.Data.SQLite` project recursively includes C# files and embeds `Resources/*.migrations`, so the new provider and migration follow its existing inclusion rules.
+
+3. `OpenSim/Data/SQLite/SQLiteGameProjectData.cs` and `OpenSim/Data/SQLite/Resources/GameProjects.migrations`
+   - SQLite schema for project metadata and immutable manifest revisions.
+   - Parameterized CRUD, owner-scoped listing, archival and UTC timestamp persistence.
+   - Revision writes use a serializable transaction, owner/status check and compare-and-advance guard.
+   - Provider opens a private connection per operation; it does not reuse the legacy SQLite static shared connection pattern.
 
 ## Not yet implemented
 
-- A concrete `IGameProjectData` provider (SQLite first, then other supported providers).
+- Concrete service implementation and provider wiring/configuration.
 - A concrete `IGameProjectService` implementation.
 - HTTP/Capability endpoints and authenticated Creator identity binding.
 - Automated unit tests and a full Prebuild + .NET 8 build.
@@ -34,12 +40,11 @@ The `OpenSim.Services.Interfaces` Prebuild project has no explicit `<Files>` lis
 
 ## Required next implementation steps
 
-1. Inspect SQLite provider registration, migration conventions and transaction helpers.
-2. Add the Game Platform tables through the repository's supported migration mechanism.
-3. Implement atomic project revision persistence in SQLite.
-4. Implement the service layer with owner checks, pagination limits, validation and typed errors.
-5. Add tests for ownership isolation, revision conflicts, validation and serialization.
-6. Run Prebuild and the complete .NET 8 build; record the actual result before proceeding.
+1. Wire the SQLite provider into the Game Project service configuration/factory.
+2. Implement the service layer with authenticated owner checks, pagination limits, manifest serialization/size enforcement, validation and typed errors.
+3. Add tests for SQLite migration, ownership isolation, revision conflicts, archival, validation and serialization.
+4. Add equivalent providers for other supported database backends where appropriate.
+5. Run Prebuild and the complete .NET 8 build; record the actual result before proceeding.
 
 ## Safety boundary
 
