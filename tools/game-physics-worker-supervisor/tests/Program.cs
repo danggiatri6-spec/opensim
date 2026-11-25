@@ -327,9 +327,12 @@ await using (GamePhysicsWorkerSupervisor workerB =
         "worker A crash during active simulation is isolated and reported as Faulted");
     await workerB.CheckHealthAsync();
     JsonElement workerBSnapshot = await workerB.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
+    JsonElement workerBEvent = await workerB.ReadEventAsync()
+        .AsTask().WaitAsync(TimeSpan.FromSeconds(3));
     Assert(workerB.State == WorkerLifecycleState.Ready &&
-        workerBSnapshot.GetProperty("tick").GetInt64() > 0,
-        "worker B remains healthy and continues its independent simulation after worker A crashes");
+        workerBSnapshot.GetProperty("tick").GetInt64() > 0 &&
+        workerBEvent.GetProperty("type").GetString() == "Snapshot",
+        "worker B remains healthy, advances, and publishes snapshots after worker A crashes");
 }
 
 for (int cycle = 0; cycle < 5; cycle++)
@@ -389,6 +392,13 @@ for (int i = 0; i < 16; i++)
 }
 await benchmarkA.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
 await benchmarkB.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
+JsonElement benchmarkEventA = await benchmarkA.ReadEventAsync()
+    .AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+JsonElement benchmarkEventB = await benchmarkB.ReadEventAsync()
+    .AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+Assert(benchmarkEventA.GetProperty("type").GetString() == "Snapshot" &&
+    benchmarkEventB.GetProperty("type").GetString() == "Snapshot",
+    "both isolated workers publish asynchronous snapshots concurrently");
 benchmarkProcessA.Refresh();
 benchmarkProcessB.Refresh();
 long memoryStartA = benchmarkProcessA.WorkingSet64;
