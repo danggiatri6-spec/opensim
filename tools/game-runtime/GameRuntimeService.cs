@@ -24,6 +24,7 @@ public interface IGamePhysicsWorkerSession : IAsyncDisposable
 {
     WorkerState State { get; }
     Task<JsonElement> CreateWorldAsync(JsonElement configuration, CancellationToken cancellationToken);
+    Task<JsonElement> StartSimulationAsync(CancellationToken cancellationToken);
     Task<JsonElement> StopWorldAsync(CancellationToken cancellationToken);
     Task StopAsync(CancellationToken cancellationToken);
 }
@@ -62,6 +63,8 @@ public sealed class GamePhysicsWorkerFactory : IGamePhysicsWorkerFactory
         public WorkerState State => _supervisor.State;
         public Task<JsonElement> CreateWorldAsync(JsonElement configuration, CancellationToken token) =>
             _supervisor.RequestAsync("CreateWorld", configuration, token);
+        public Task<JsonElement> StartSimulationAsync(CancellationToken token) =>
+            _supervisor.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }), token);
         public Task<JsonElement> StopWorldAsync(CancellationToken token) =>
             _supervisor.RequestAsync("StopWorld", JsonSerializer.SerializeToElement(new { }), token);
         public Task StopAsync(CancellationToken token) => _supervisor.StopAsync(token);
@@ -183,6 +186,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 sizeY = world.SizeY
             });
             await record.Worker.CreateWorldAsync(config, cancellationToken).ConfigureAwait(false);
+            await record.Worker.StartSimulationAsync(cancellationToken).ConfigureAwait(false);
             await record.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
