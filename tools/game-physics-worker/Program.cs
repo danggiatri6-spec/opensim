@@ -58,7 +58,7 @@ internal static class Program
         if (first is null)
             return 3;
 
-        WorkerProtocolEnvelope? hello = first.RootElement.Deserialize<WorkerProtocolEnvelope>();
+        WorkerProtocolEnvelope? hello = first.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonSerializerOptions.Web);
         if (!WorkerProtocolValidator.TryValidate(hello, out _) ||
             hello!.Kind != WorkerMessageKind.Request ||
             hello.Operation != "Hello" ||
@@ -100,7 +100,7 @@ internal static class Program
             if (document is null)
                 return 0;
 
-            WorkerProtocolEnvelope? request = document.RootElement.Deserialize<WorkerProtocolEnvelope>();
+            WorkerProtocolEnvelope? request = document.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonSerializerOptions.Web);
             if (!WorkerProtocolValidator.TryValidate(request, out _) ||
                 request!.Kind != WorkerMessageKind.Request ||
                 request.WorldId != hello.WorldId ||
@@ -144,7 +144,7 @@ internal static class Program
             Payload = payload
         };
 
-        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(response);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(response, JsonSerializerOptions.Web);
         await WorkerFrameCodec.WriteAsync(stream, bytes, MaxFrameBytes);
     }
 }
