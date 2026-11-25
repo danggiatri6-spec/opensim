@@ -243,6 +243,31 @@ await using (GamePhysicsWorkerSupervisor supervisor =
 await using (GamePhysicsWorkerSupervisor supervisor =
     await GamePhysicsWorkerSupervisor.StartAsync(Options()))
 {
+    await supervisor.RequestAsync("CreateWorld", JsonSerializer.SerializeToElement(new { profile = "Balanced" }));
+    for (int i = 0; i < 92; i++)
+    {
+        await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+        {
+            bodyId = Guid.NewGuid(), mass = 1f, shape = "Sphere",
+            position = new { x = 0f, y = 100f, z = 0f }
+        }));
+    }
+
+    bool overflowRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 1 }));
+    }
+    catch (InvalidOperationException) { overflowRejected = true; }
+    Assert(overflowRejected, "critical physics event overflow is reported instead of silently dropping contacts");
+    await supervisor.WaitForFaultAsync(TimeSpan.FromSeconds(8));
+    Assert(supervisor.State == WorkerLifecycleState.Faulted,
+        "critical event overflow faults the worker instance and is contained by the supervisor");
+}
+
+await using (GamePhysicsWorkerSupervisor supervisor =
+    await GamePhysicsWorkerSupervisor.StartAsync(Options()))
+{
     int pid = supervisor.ProcessId;
     using Process child = Process.GetProcessById(pid);
     child.Kill(entireProcessTree: true);
