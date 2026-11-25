@@ -173,8 +173,14 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (State is WorkerLifecycleState.Stopped or WorkerLifecycleState.Faulted)
+        if (State == WorkerLifecycleState.Stopped)
             return;
+        if (State == WorkerLifecycleState.Faulted)
+        {
+            TryKill();
+            await CleanupTransportAsync().ConfigureAwait(false);
+            return;
+        }
 
         SetState(WorkerLifecycleState.Stopping);
         _heartbeatStop.Cancel();
@@ -221,17 +227,25 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         if (!allowStopping && State != WorkerLifecycleState.Ready)
             throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
-        long sequence = Interlocked.Increment(ref _sequence);
-        var request = new WorkerProtocolEnvelope
+        await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            Kind = WorkerMessageKind.Request,
-            WorldId = _options.WorldId,
-            RequestId = Guid.NewGuid(),
-            Sequence = sequence,
-            Operation = operation,
-            Payload = payload
-        };
-        return await ExchangeAsync(request, _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
+            long sequence = ++_sequence;
+            var request = new WorkerProtocolEnvelope
+            {
+                Kind = WorkerMessageKind.Request,
+                WorldId = _options.WorldId,
+                RequestId = Guid.NewGuid(),
+                Sequence = sequence,
+                Operation = operation,
+                Payload = payload
+            };
+            return await ExchangeLockedAsync(request, _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _requestLock.Release();
+        }
     }
 
     private async Task<JsonDocument> ExchangeAsync(
@@ -242,7 +256,20 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+            return await ExchangeLockedAsync(request, timeout, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _requestLock.Release();
+        }
+    }
+
+    private async Task<JsonDocument> ExchangeLockedAsync(
+        WorkerProtocolEnvelope request,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
             linked.CancelAfter(timeout);
             byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
             await WorkerFrameCodec.WriteAsync(_stream, bytes, WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
@@ -258,12 +285,13 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
                 response.Dispose();
                 throw new InvalidDataException("Worker response did not match its request.");
             }
+            if (envelope.Ok != true)
+            {
+                string error = envelope.Error?.ToString() ?? "UnknownWorkerError";
+                response.Dispose();
+                throw new InvalidOperationException($"Worker request '{request.Operation}' failed: {error}.");
+            }
             return response;
-        }
-        finally
-        {
-            _requestLock.Release();
-        }
     }
 
     private async Task RunHeartbeatAsync()
@@ -327,6 +355,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         _heartbeatStop.Cancel();
         _lifetime.Cancel();
         await CleanupTransportAsync().ConfigureAwait(false);
+        try { await _exitMonitor.ConfigureAwait(false); } catch { }
         _requestLock.Dispose();
         _heartbeatStop.Dispose();
         _lifetime.Dispose();
