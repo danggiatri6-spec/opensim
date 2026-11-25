@@ -32,9 +32,9 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, PendingRequest> _pending = new();
     private readonly Channel<JsonElement> _events = Channel.CreateBounded<JsonElement>(
-        new BoundedChannelOptions(WorkerProtocolConstants.DefaultMaxQueuedEvents)
+        new BoundedChannelOptions(1)
         {
-            FullMode = BoundedChannelFullMode.Wait,
+            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = false,
             SingleWriter = true
         });
