@@ -26,6 +26,7 @@ await using var runtime = new GameRuntimeService(projects, workers, options);
 GameInstanceResult started = await runtime.StartInstanceAsync(owner, projectId, 1);
 Assert(started.Success && started.Instance?.State == GameInstanceState.Running, "owner starts a valid revision");
 Assert(workers.Sessions.Count == 1, "one worker created");
+Assert(workers.Sessions[0].Started, "fixed-step simulation starts after world creation");
 Assert(workers.Sessions[0].LastConfiguration.GetProperty("profile").GetString() == "Balanced", "Balanced profile enforced");
 Assert(workers.Sessions[0].LastConfiguration.GetProperty("worldName").GetString() == "Default World", "default world resolved from immutable manifest");
 
@@ -113,6 +114,12 @@ sealed class FakeSession : IGamePhysicsWorkerSession
         LastConfiguration = configuration.Clone();
         return Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Created" }));
     }
+    public Task<JsonElement> StartSimulationAsync(CancellationToken cancellationToken)
+    {
+        Started = true;
+        return Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Running" }));
+    }
+    public bool Started { get; private set; }
     public Task<JsonElement> StopWorldAsync(CancellationToken cancellationToken) =>
         Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Stopped" }));
     public Task StopAsync(CancellationToken cancellationToken) { State = WorkerLifecycleState.Stopped; return Task.CompletedTask; }
