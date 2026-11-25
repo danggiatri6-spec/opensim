@@ -151,6 +151,56 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     }
     await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = realtimeBodyId }));
 
+    Guid movingBodyId = Guid.NewGuid();
+    Guid wallBodyId = Guid.NewGuid();
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = movingBodyId, mass = 1f, shape = "Sphere",
+        position = new { x = 0f, y = 10f, z = 0f }
+    }));
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = wallBodyId, isStatic = true, shape = "Box",
+        position = new { x = 0.8f, y = 10f, z = 0f }
+    }));
+    await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 1 }));
+    JsonElement contactBegin = await supervisor.ReadEventAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+    Assert(contactBegin.GetProperty("type").GetString() == "ContactBegin",
+        "fake adapter emits ordered contact-begin events");
+    await supervisor.RequestAsync("SetVelocity", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = movingBodyId, velocity = new { x = 10f, y = 0f, z = 0f }
+    }));
+    await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 3 }));
+    await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 3 }));
+    JsonElement contactEnd = await supervisor.ReadEventAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+    Assert(contactEnd.GetProperty("type").GetString() == "ContactEnd",
+        "fake adapter emits contact-end events after separation");
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = movingBodyId }));
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = wallBodyId }));
+
+    Guid triggerBodyId = Guid.NewGuid();
+    Guid triggerTargetId = Guid.NewGuid();
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = triggerBodyId, mass = 1f, shape = "Sphere",
+        position = new { x = 0f, y = 10f, z = 0f }
+    }));
+    await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
+    {
+        bodyId = triggerTargetId, isStatic = true, isTrigger = true, shape = "Box",
+        position = new { x = 0.5f, y = 10f, z = 0f }
+    }));
+    await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 1 }));
+    JsonElement triggerEnter = await supervisor.ReadEventAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+    Assert(triggerEnter.GetProperty("type").GetString() == "TriggerEnter",
+        "fake adapter emits trigger-enter events separately from contacts");
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = triggerTargetId }));
+    JsonElement triggerExit = await supervisor.ReadEventAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
+    Assert(triggerExit.GetProperty("type").GetString() == "TriggerExit",
+        "destroying an overlapping trigger emits a matching trigger-exit event");
+    await supervisor.RequestAsync("DestroyBody", JsonSerializer.SerializeToElement(new { bodyId = triggerBodyId }));
+
     long tickBeforeBoundaryTest = snapshot.GetProperty("tick").GetInt64();
     Guid boundaryBodyId = Guid.NewGuid();
     await supervisor.RequestAsync("CreateBody", JsonSerializer.SerializeToElement(new
