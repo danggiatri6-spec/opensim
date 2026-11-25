@@ -365,11 +365,11 @@ W1 process and IPC prototype acceptance is complete: both local IPC transports p
 - [x] Enforce the Balanced starting body cap (128 dynamic bodies) and a separate total body ceiling (384 including static bodies).
 - [x] Test gravity integration, mass-scaled impulse, body lifecycle, and rejection of a second world in one worker process.
 - [x] Add negative tests for invalid shapes, non-positive mass, configured dynamic-body capacity, catch-up limit, and world-bound overflow with atomic tick rejection.
-- [ ] Add collision/contact and trigger semantics only after the adapter boundary and lifecycle are stable.
+- [x] Add fake-adapter contact begin/end and trigger enter/exit transitions as protocol-level event fixtures.
 - [ ] Test the BulletS unmanaged backend only inside the worker, after native lifecycle audit gates pass.
 - Never pass backend types across the IPC boundary.
 
-The current fake adapter is a deterministic protocol/lifecycle test backend. It is not a production collision engine, does not run a real-time simulation thread, and does not yet implement contact generation, constraints, triggers, or snapshots on a timer. Those belong to later W3 work.
+The current fake adapter is a deterministic protocol/lifecycle test backend, not a production collision engine. Its simple unit-radius overlap model exists only to test event transport and ordering; it is not a substitute for BulletS/ODE collision detection or contact resolution.
 
 ### W3 — One-world simulation
 
@@ -384,10 +384,16 @@ W3-A implementation in progress:
 - [x] Add a single worker writer lock for responses and asynchronous snapshot events; frames cannot interleave.
 - [x] Add a supervisor single-reader loop, request-ID/sequence correlation, and an asynchronous event receive API.
 - [x] Coalesce stale snapshots in both worker and supervisor queues rather than accumulating obsolete world states.
-- [ ] Add contact begin/end and trigger events after the snapshot transport is stable.
-- [ ] Test queue saturation, critical-event overflow, event ordering under concurrent requests, and thread-join teardown.
+- [x] Add fake contact begin/end and trigger enter/exit transitions from the adapter.
+- [x] Separate critical physics events from coalescible snapshots in the worker runtime.
+- [x] Enforce a bounded, non-dropping critical-event queue; overflow faults and stops the simulation runtime.
+- [x] Publish snapshots and critical events through one serialized worker writer with a shared monotonic event sequence.
+- [x] Merge events in the supervisor by event sequence while coalescing stale snapshots.
+- [x] Add integration tests for contact begin/end, trigger enter/exit, and asynchronous snapshot delivery.
+- [ ] Test critical-event queue saturation and explicit overflow fault propagation end-to-end.
+- [ ] Test event ordering under concurrent host requests and thread-join teardown under injected backend failure.
 
-W3-B snapshot transport is implemented. The current event stream carries snapshots only; contact and trigger events are deliberately not represented as droppable snapshots and remain a separate follow-up. Critical-event overflow policy must be tested before those event types are enabled.
+W3-B now transports both event classes. The fake adapter's overlap calculation is deliberately simplistic and is only an event-pipeline fixture; it does not resolve contacts and is not production physics.
 
 ### W4 — Failure containment
 - Kill the worker during stepping and during teardown.
