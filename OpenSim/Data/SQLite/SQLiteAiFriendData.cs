@@ -150,7 +150,16 @@ VALUES (@id,@name,@profile,@persona,@appearance,@voice,@publisher,@status,@creat
 SELECT @id,@user,@character,@state,@level,@first,@friends,@last,@greeting,@follow,@voice,@version
 WHERE EXISTS (SELECT 1 FROM AiFriendCharacters WHERE CharacterID=@character AND Status=1)";
                 AddRelationshipParameters(q, x);
-                return q.ExecuteNonQuery() == 1;
+                try
+                {
+                    return q.ExecuteNonQuery() == 1;
+                }
+                catch (SQLiteException ex) when (ex.ErrorCode == SQLiteErrorCode.Constraint)
+                {
+                    // A duplicate user/character pair is an expected domain rejection,
+                    // not an unhandled provider exception.
+                    return false;
+                }
             }
         }
 
