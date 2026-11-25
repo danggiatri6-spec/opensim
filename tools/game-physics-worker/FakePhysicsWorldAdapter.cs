@@ -16,6 +16,8 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
     };
 
     private readonly Dictionary<Guid, BodyState> _bodies = new();
+    private readonly Queue<JsonElement> _pendingEvents = new();
+    private readonly HashSet<(Guid A, Guid B)> _activePairs = new();
     private Guid _worldId;
     private Vector3 _gravity = new(0, -9.81f, 0);
     private int _maxDynamicBodies = HardBodyLimit;
@@ -85,8 +87,15 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         if (!isStatic && _bodies.Values.Count(x => !x.IsStatic) >= _maxDynamicBodies)
             throw new WorkerCommandException(WorkerErrorCode.CapacityExceeded, "Dynamic body capacity has been reached.");
 
-        _bodies.Add(bodyId, new BodyState(bodyId, mass, isStatic, shape, position));
-        return JsonSerializer.SerializeToElement(new { bodyId, mass, isStatic, shape, position = ToJson(position) });
+        bool isTrigger = false;
+        if (TryGet(body, "isTrigger", out JsonElement triggerValue))
+        {
+            if (triggerValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "isTrigger must be a boolean.");
+            isTrigger = triggerValue.GetBoolean();
+        }
+        _bodies.Add(bodyId, new BodyState(bodyId, mass, isStatic, isTrigger, shape, position));
+        return JsonSerializer.SerializeToElement(new { bodyId, mass, isStatic, isTrigger, shape, position = ToJson(position) });
     }
 
     public JsonElement SetVelocity(JsonElement command)
@@ -141,9 +150,17 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
                 update.Body.Position = update.Position;
             }
             _tick++;
+            UpdateContacts();
         }
 
         return GetSnapshot();
+    }
+
+    public IReadOnlyList<JsonElement> DrainEvents()
+    {
+        var events = new List<JsonElement>(_pendingEvents.Count);
+        while (_pendingEvents.Count > 0) events.Add(_pendingEvents.Dequeue());
+        return events;
     }
 
     public JsonElement GetSnapshot()
@@ -170,8 +187,53 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         Guid bodyId = ReadGuid(command, "bodyId");
         if (!_bodies.Remove(bodyId))
             throw new WorkerCommandException(WorkerErrorCode.ObjectNotFound, "Body ID was not found.");
+        foreach (var pair in _activePairs.Where(x => x.A == bodyId || x.B == bodyId).ToArray())
+        {
+            _activePairs.Remove(pair);
+            BodyState? other = _bodies.GetValueOrDefault(pair.A == bodyId ? pair.B : pair.A);
+            if (other is not null)
+                _pendingEvents.Enqueue(CreatePairEvent(pair, "ContactEnd", "TriggerExit", other, null));
+        }
         return JsonSerializer.SerializeToElement(new { bodyId, destroyed = true });
     }
+
+    private void UpdateContacts()
+    {
+        var current = new HashSet<(Guid A, Guid B)>();
+        BodyState[] bodies = _bodies.Values.OrderBy(x => x.Id).ToArray();
+        for (int i = 0; i < bodies.Length; i++)
+        for (int j = i + 1; j < bodies.Length; j++)
+        {
+            BodyState a = bodies[i], b = bodies[j];
+            if (a.IsStatic && b.IsStatic) continue;
+            if (Vector3.DistanceSquared(a.Position, b.Position) > 1f) continue;
+            var pair = (a.Id, b.Id);
+            current.Add(pair);
+            if (!_activePairs.Contains(pair))
+            {
+                string type = a.IsTrigger || b.IsTrigger ? "TriggerEnter" : "ContactBegin";
+                _pendingEvents.Enqueue(JsonSerializer.SerializeToElement(new
+                {
+                    type, bodyA = a.Id, bodyB = b.Id, tick = _tick
+                }));
+            }
+        }
+        foreach (var pair in _activePairs.Except(current).OrderBy(x => x.A).ThenBy(x => x.B))
+        {
+            BodyState? a = _bodies.GetValueOrDefault(pair.A);
+            BodyState? b = _bodies.GetValueOrDefault(pair.B);
+            bool trigger = (a?.IsTrigger ?? false) || (b?.IsTrigger ?? false);
+            _pendingEvents.Enqueue(JsonSerializer.SerializeToElement(new
+            {
+                type = trigger ? "TriggerExit" : "ContactEnd", bodyA = pair.A, bodyB = pair.B, tick = _tick
+            }));
+        }
+        _activePairs.Clear();
+        foreach (var pair in current) _activePairs.Add(pair);
+    }
+
+    private static JsonElement CreatePairEvent((Guid A, Guid B) pair, string contactType, string triggerType, BodyState other, BodyState? removed) =>
+        JsonSerializer.SerializeToElement(new { type = other.IsTrigger || (removed?.IsTrigger ?? false) ? triggerType : contactType, bodyA = pair.A, bodyB = pair.B });
 
     public JsonElement StopWorld()
     {
@@ -179,6 +241,8 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
         if (_stopped)
             return JsonSerializer.SerializeToElement(new { state = "Stopped" });
         _bodies.Clear();
+        _activePairs.Clear();
+        _pendingEvents.Clear();
         _stopped = true;
         return JsonSerializer.SerializeToElement(new { state = "Stopped", tick = _tick });
     }
@@ -286,11 +350,12 @@ public sealed class FakePhysicsWorldAdapter : IPhysicsWorldAdapter
 
     private static object ToJson(Vector3 vector) => new { x = vector.X, y = vector.Y, z = vector.Z };
 
-    private sealed class BodyState(Guid id, float mass, bool isStatic, string shape, Vector3 position)
+    private sealed class BodyState(Guid id, float mass, bool isStatic, bool isTrigger, string shape, Vector3 position)
     {
         public Guid Id { get; } = id;
         public float Mass { get; } = mass;
         public bool IsStatic { get; } = isStatic;
+        public bool IsTrigger { get; } = isTrigger;
         public string Shape { get; } = shape;
         public Vector3 Position { get; set; } = position;
         public Vector3 Velocity { get; set; }
