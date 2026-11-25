@@ -31,10 +31,17 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     private readonly NamedPipeServerStream? _pipeServer;
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly ConcurrentDictionary<Guid, PendingRequest> _pending = new();
-    private readonly Channel<JsonElement> _events = Channel.CreateBounded<JsonElement>(
+    private readonly Channel<JsonElement> _snapshots = Channel.CreateBounded<JsonElement>(
         new BoundedChannelOptions(1)
         {
             FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = false,
+            SingleWriter = true
+        });
+    private readonly Channel<JsonElement> _physicsEvents = Channel.CreateBounded<JsonElement>(
+        new BoundedChannelOptions(WorkerProtocolConstants.DefaultMaxQueuedEvents)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
             SingleWriter = true
         });
@@ -194,8 +201,35 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         return response.RootElement.GetProperty("payload").Clone();
     }
 
-    public ValueTask<JsonElement> ReadEventAsync(CancellationToken cancellationToken = default) =>
-        _events.Reader.ReadAsync(cancellationToken);
+    public async ValueTask<JsonElement> ReadEventAsync(CancellationToken cancellationToken = default)
+    {
+        Task<bool>? snapshotWait = null;
+        Task<bool>? physicsWait = null;
+        while (true)
+        {
+            if (_physicsEvents.Reader.TryRead(out JsonElement physicsEvent)) return physicsEvent;
+            if (_snapshots.Reader.TryRead(out JsonElement snapshot)) return snapshot;
+
+            physicsWait ??= _physicsEvents.Reader.WaitToReadAsync(cancellationToken).AsTask();
+            snapshotWait ??= _snapshots.Reader.WaitToReadAsync(cancellationToken).AsTask();
+            await Task.WhenAny(physicsWait, snapshotWait).ConfigureAwait(false);
+
+            if (physicsWait.IsCompleted)
+            {
+                bool available = await physicsWait.ConfigureAwait(false);
+                physicsWait = null;
+                if (!available && _snapshots.Reader.Completion.IsCompleted)
+                    throw new ChannelClosedException();
+            }
+            if (snapshotWait.IsCompleted)
+            {
+                bool available = await snapshotWait.ConfigureAwait(false);
+                snapshotWait = null;
+                if (!available && _physicsEvents.Reader.Completion.IsCompleted)
+                    throw new ChannelClosedException();
+            }
+        }
+    }
 
     public async Task CheckHealthAsync(CancellationToken cancellationToken = default)
     {
@@ -353,8 +387,14 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
                     if (envelope.EventSequence != expected || envelope.Sequence != expected)
                         throw new InvalidDataException("Worker event sequence is not strictly increasing.");
                     Interlocked.Exchange(ref _lastEventSequence, expected);
-                    if (!_events.Writer.TryWrite(envelope.Payload.Clone()))
-                        throw new InvalidOperationException("Supervisor event queue overflowed.");
+                    JsonElement eventPayload = envelope.Payload.Clone();
+                    string eventType = eventPayload.ValueKind == JsonValueKind.Object &&
+                        eventPayload.TryGetProperty("type", out JsonElement typeValue)
+                            ? typeValue.GetString() ?? string.Empty : string.Empty;
+                    if (eventType == "Snapshot")
+                        _snapshots.Writer.TryWrite(eventPayload);
+                    else if (!_physicsEvents.Writer.TryWrite(eventPayload))
+                        throw new InvalidOperationException("Supervisor critical physics event queue overflowed.");
                     continue;
                 }
 
@@ -387,7 +427,11 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             foreach (PendingRequest pending in _pending.Values)
                 pending.Completion.TrySetException(new IOException("Worker IPC reader stopped.", ex));
         }
-        finally { _events.Writer.TryComplete(); }
+        finally
+        {
+            _snapshots.Writer.TryComplete();
+            _physicsEvents.Writer.TryComplete();
+        }
     }
 
     private async Task RunHeartbeatAsync()
