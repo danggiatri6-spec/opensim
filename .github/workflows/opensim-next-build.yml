@@ -45,6 +45,25 @@ jobs:
       - name: Run Game Runtime lifecycle tests
         run: dotnet run --no-build --configuration Release --project tools/game-runtime/tests/GameRuntime.Tests.csproj
 
+      - name: Publish Game Runtime deployment bundle
+        shell: bash
+        run: |
+          mkdir -p artifacts/game-runtime/worker
+          dotnet publish --configuration Release tools/game-runtime/GameRuntime.csproj --output artifacts/game-runtime
+          dotnet publish --configuration Release tools/game-physics-worker/GamePhysicsWorker.csproj --output artifacts/game-runtime/worker
+          test -f artifacts/game-runtime/GameRuntime.dll
+          test -f artifacts/game-runtime/GamePhysicsWorker.Supervisor.dll
+          test -f artifacts/game-runtime/GamePhysicsWorker.Protocol.dll
+          test -f artifacts/game-runtime/worker/GamePhysicsWorker.dll
+          test -f artifacts/game-runtime/worker/GamePhysicsWorker.runtimeconfig.json
+
+      - name: Upload Game Runtime deployment bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: opensim-next-game-runtime
+          path: artifacts/game-runtime
+          if-no-files-found: error
+
       - name: Run AI Friend domain tests
         run: dotnet run --configuration Release --project tools/ai-friend-test-runner/AiFriend.TestRunner.csproj
 
