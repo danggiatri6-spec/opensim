@@ -424,3 +424,20 @@ The first test should target `BSAPIUnman` below `BSScene`, not instantiate `BSSc
 ### Decision update
 
 The source evidence strengthens the case for a narrow unmanaged backend spike, but does not justify modifying legacy `BSScene` lifecycle yet. Keep existing Region behavior untouched. If native source audit or the two-world test reveals process-global state, callback cross-talk, or unreliable teardown that cannot be isolated without invasive changes, use a dedicated worker-process boundary for Game Physics rather than weakening legacy Region stability.
+
+## 20. Native BulletSim source availability gate (2026-11-25)
+
+The current `danggiatri6-spec/opensim` branch contains the managed BulletS wrapper and ships BulletSim native binaries, but the repository tree contains no BulletSim native C/C++ source files. The shipped binary artifacts include Windows DLL, Linux shared-library, and macOS dylib variants under `bin/lib64`.
+
+This changes the confidence level of the in-process isolation decision:
+
+- Managed code inspection can establish that each `BSAPIUnman` instance owns its managed pinned buffers and receives a world pointer from native `Initialize2`.
+- It cannot establish whether the native library uses process-global mutable state, global callback registration, shared static allocators, or whether `Shutdown2(world)` is fully scoped to one world.
+- A two-world managed harness using the shipped binary can test observed behavior, but a passing test cannot prove absence of latent native global-state coupling across platforms or engine versions.
+- Native source access, vendor documentation, or a reproducible native-level isolation contract is therefore a prerequisite for approving in-process multi-world hosting as a supported architecture.
+
+### Architecture consequence
+
+Keep the unmanaged two-world harness as a useful empirical spike, but do not make in-process multi-world hosting the default production assumption. For the first production Game Physics backend, prefer a dedicated worker-process boundary unless native source or authoritative backend guarantees become available and the isolation/teardown tests pass. A worker process should host one world initially; only consider multiple worlds per worker after independent resource and crash-containment tests.
+
+This is a risk-based recommendation, not a claim that the native library is known to be unsafe. The current repository simply does not provide enough native implementation evidence to certify process-level isolation.
