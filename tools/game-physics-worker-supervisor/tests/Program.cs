@@ -123,6 +123,13 @@ await using (GamePhysicsWorkerSupervisor supervisor =
     }));
     JsonElement started = await supervisor.RequestAsync("StartSimulation", JsonSerializer.SerializeToElement(new { }));
     Assert(started.GetProperty("state").GetString() == "Running", "worker starts the background fixed-step simulation");
+    bool liveManualStepRejected = false;
+    try
+    {
+        await supervisor.RequestAsync("Step", JsonSerializer.SerializeToElement(new { steps = 1 }));
+    }
+    catch (InvalidOperationException) { liveManualStepRejected = true; }
+    Assert(liveManualStepRejected, "manual deterministic Step cannot race the live simulation loop");
     await Task.Delay(TimeSpan.FromMilliseconds(400));
     JsonElement paused = await supervisor.RequestAsync("PauseSimulation", JsonSerializer.SerializeToElement(new { }));
     snapshot = await supervisor.RequestAsync("GetSnapshot", JsonSerializer.SerializeToElement(new { }));
