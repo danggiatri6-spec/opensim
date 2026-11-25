@@ -70,8 +70,11 @@ internal static class Program
             return 4;
         }
 
+        string? launchToken = await Console.In.ReadLineAsync();
         byte[] supplied = System.Text.Encoding.UTF8.GetBytes(tokenElement.GetString() ?? string.Empty);
-        byte[] expected = Convert.FromBase64String(Environment.GetEnvironmentVariable("OPENSIM_WORKER_TOKEN") ?? string.Empty);
+        byte[] expected;
+        try { expected = Convert.FromBase64String(launchToken ?? string.Empty); }
+        catch (FormatException) { return 5; }
         if (supplied.Length != expected.Length || !CryptographicOperations.FixedTimeEquals(supplied, expected))
         {
             await WriteResponseAsync(stream, hello, false, WorkerErrorCode.AuthenticationFailed, default);
