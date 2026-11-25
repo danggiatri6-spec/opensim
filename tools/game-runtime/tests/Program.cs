@@ -63,6 +63,18 @@ Assert(failed.Error == GameInstanceError.WorkerUnavailable, "worker startup fail
 GameInstanceResult retry = await retryRuntime.StartInstanceAsync(owner, projectId, 1);
 Assert(retry.Success, "startup failure releases its reservation");
 
+var stopFailureFactory = new FakeWorkerFactory();
+await using (var stopFailureRuntime = new GameRuntimeService(projects, stopFailureFactory, options))
+{
+    GameInstanceResult stopFailureStart = await stopFailureRuntime.StartInstanceAsync(owner, projectId, 1);
+    stopFailureFactory.Sessions[0].FailStopWorld = true;
+    GameInstanceResult stopFailure = await stopFailureRuntime.StopInstanceAsync(owner, stopFailureStart.Instance!.InstanceID);
+    Assert(stopFailure.Error == GameInstanceError.WorkerUnavailable, "worker stop failure is returned as a typed service error");
+    GameInstanceResult stopFailureState = await stopFailureRuntime.GetInstanceAsync(owner, stopFailureStart.Instance.InstanceID);
+    Assert(stopFailureState.Instance?.State == GameInstanceState.Faulted && stopFailureFactory.Sessions[0].Disposed,
+        "failed stop faults the instance and disposes the worker session");
+}
+
 var workerAssemblyPath = Path.GetFullPath(Path.Combine(
     AppContext.BaseDirectory,
     "../../../../../game-physics-worker/bin/Release/net8.0/GamePhysicsWorker.dll"));
@@ -147,8 +159,12 @@ sealed class FakeSession : IGamePhysicsWorkerSession
     }
     public bool Started { get; private set; }
     public bool Disposed { get; private set; }
-    public Task<JsonElement> StopWorldAsync(CancellationToken cancellationToken) =>
-        Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Stopped" }));
+    public bool FailStopWorld { get; set; }
+    public Task<JsonElement> StopWorldAsync(CancellationToken cancellationToken)
+    {
+        if (FailStopWorld) throw new IOException("synthetic stop failure");
+        return Task.FromResult(JsonSerializer.SerializeToElement(new { state = "Stopped" }));
+    }
     public Task StopAsync(CancellationToken cancellationToken) { State = WorkerLifecycleState.Stopped; return Task.CompletedTask; }
     public ValueTask DisposeAsync() { Disposed = true; State = WorkerLifecycleState.Stopped; return ValueTask.CompletedTask; }
     public void SetFaulted() => State = WorkerLifecycleState.Faulted;
