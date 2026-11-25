@@ -1,8 +1,10 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Threading.Channels;
 using OpenSim.GamePhysics.WorkerProtocol;
 
 namespace OpenSim.GamePhysics.WorkerSupervisor;
@@ -27,14 +29,25 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     private readonly string? _privateDirectory;
     private readonly Socket? _socketListener;
     private readonly NamedPipeServerStream? _pipeServer;
-    private readonly SemaphoreSlim _requestLock = new(1, 1);
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
+    private readonly ConcurrentDictionary<Guid, PendingRequest> _pending = new();
+    private readonly Channel<JsonElement> _events = Channel.CreateBounded<JsonElement>(
+        new BoundedChannelOptions(WorkerProtocolConstants.DefaultMaxQueuedEvents)
+        {
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleReader = false,
+            SingleWriter = true
+        });
     private readonly CancellationTokenSource _lifetime = new();
     private readonly CancellationTokenSource _heartbeatStop = new();
     private readonly Task _exitMonitor;
     private Task? _heartbeatTask;
+    private Task? _readerTask;
     private long _sequence = 1;
+    private long _lastEventSequence;
     private int _state = (int)WorkerLifecycleState.Handshaking;
     private int _disposed;
+    private int _transportCleaned;
 
     private GamePhysicsWorkerSupervisor(
         GamePhysicsWorkerLaunchOptions options,
@@ -76,9 +89,8 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         if (windows)
         {
             endpoint = "opensim-game-physics-" + Guid.NewGuid().ToString("N");
-            pipe = new NamedPipeServerStream(
-                endpoint, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+            pipe = new NamedPipeServerStream(endpoint, PipeDirection.InOut, 1,
+                PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
         }
         else
         {
@@ -108,7 +120,8 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         try
         {
             process = Process.Start(start) ?? throw new InvalidOperationException("Worker process did not start.");
-            await process.StandardInput.WriteLineAsync(Convert.ToBase64String(token)).WaitAsync(options.StartupTimeout, cancellationToken);
+            await process.StandardInput.WriteLineAsync(Convert.ToBase64String(token))
+                .WaitAsync(options.StartupTimeout, cancellationToken);
             process.StandardInput.Close();
 
             using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -138,11 +151,12 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
                 Payload = JsonSerializer.SerializeToElement(new { token = Convert.ToBase64String(token) })
             };
 
-            using JsonDocument response = await supervisor.ExchangeAsync(hello, options.StartupTimeout, cancellationToken).ConfigureAwait(false);
+            using JsonDocument response = await supervisor.ExchangeHandshakeAsync(hello, options.StartupTimeout, cancellationToken).ConfigureAwait(false);
             if (!response.RootElement.GetProperty("ok").GetBoolean())
                 throw new InvalidOperationException("Worker rejected the authenticated handshake.");
 
             supervisor.SetState(WorkerLifecycleState.Ready);
+            supervisor._readerTask = supervisor.RunReaderLoopAsync();
             supervisor._heartbeatTask = supervisor.RunHeartbeatAsync();
             CryptographicOperations.ZeroMemory(token);
             return supervisor;
@@ -166,16 +180,13 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
                 Directory.Delete(privateDirectory, recursive: true);
             throw;
         }
-
     }
 
     public async Task<JsonElement> EchoAsync(JsonElement payload, CancellationToken cancellationToken = default) =>
         await RequestAsync("Echo", payload, cancellationToken).ConfigureAwait(false);
 
     public async Task<JsonElement> RequestAsync(
-        string operation,
-        JsonElement payload,
-        CancellationToken cancellationToken = default)
+        string operation, JsonElement payload, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(operation))
             throw new ArgumentException("Operation is required.", nameof(operation));
@@ -183,9 +194,13 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         return response.RootElement.GetProperty("payload").Clone();
     }
 
+    public ValueTask<JsonElement> ReadEventAsync(CancellationToken cancellationToken = default) =>
+        _events.Reader.ReadAsync(cancellationToken);
+
     public async Task CheckHealthAsync(CancellationToken cancellationToken = default)
     {
-        using JsonDocument response = await SendRequestAsync("Ping", JsonSerializer.SerializeToElement(new { }), cancellationToken).ConfigureAwait(false);
+        using JsonDocument response = await SendRequestAsync(
+            "Ping", JsonSerializer.SerializeToElement(new { }), cancellationToken).ConfigureAwait(false);
         if (!response.RootElement.GetProperty("ok").GetBoolean())
             throw new InvalidOperationException("Worker health request failed.");
     }
@@ -198,10 +213,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         {
             _heartbeatStop.Cancel();
             _lifetime.Cancel();
-            if (_heartbeatTask is not null)
-            {
-                try { await _heartbeatTask.ConfigureAwait(false); } catch { }
-            }
+            if (_heartbeatTask is not null) { try { await _heartbeatTask.ConfigureAwait(false); } catch { } }
             TryKill();
             await CleanupTransportAsync().ConfigureAwait(false);
             return;
@@ -209,17 +221,16 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
         SetState(WorkerLifecycleState.Stopping);
         _heartbeatStop.Cancel();
-        if (_heartbeatTask is not null)
-        {
-            try { await _heartbeatTask.ConfigureAwait(false); } catch { }
-        }
+        if (_heartbeatTask is not null) { try { await _heartbeatTask.ConfigureAwait(false); } catch { } }
 
         try
         {
-            using JsonDocument response = await SendRequestAsync(
+            using JsonDocument _ = await SendRequestAsync(
                 "Shutdown", JsonSerializer.SerializeToElement(new { }), cancellationToken, allowStopping: true).ConfigureAwait(false);
-            await _process.WaitForExitAsync(cancellationToken).WaitAsync(_options.ShutdownTimeout, cancellationToken).ConfigureAwait(false);
+            await _process.WaitForExitAsync(cancellationToken)
+                .WaitAsync(_options.ShutdownTimeout, cancellationToken).ConfigureAwait(false);
             _lifetime.Cancel();
+            if (_readerTask is not null) { try { await _readerTask.ConfigureAwait(false); } catch { } }
             SetState(WorkerLifecycleState.Stopped);
         }
         catch
@@ -229,10 +240,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
             SetState(WorkerLifecycleState.Faulted);
             throw;
         }
-        finally
-        {
-            await CleanupTransportAsync().ConfigureAwait(false);
-        }
+        finally { await CleanupTransportAsync().ConfigureAwait(false); }
     }
 
     public async Task WaitForFaultAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
@@ -244,82 +252,118 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
     }
 
     private async Task<JsonDocument> SendRequestAsync(
-        string operation,
-        JsonElement payload,
-        CancellationToken cancellationToken,
-        bool allowStopping = false)
+        string operation, JsonElement payload, CancellationToken cancellationToken, bool allowStopping = false)
     {
         if (!allowStopping && State != WorkerLifecycleState.Ready)
             throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
-        await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var request = new WorkerProtocolEnvelope
+        {
+            Kind = WorkerMessageKind.Request,
+            WorldId = _options.WorldId,
+            RequestId = Guid.NewGuid(),
+            Sequence = Interlocked.Increment(ref _sequence),
+            Operation = operation,
+            Payload = payload.Clone()
+        };
+        var pending = new PendingRequest(request.Sequence);
+        if (!_pending.TryAdd(request.RequestId!.Value, pending))
+            throw new InvalidOperationException("Could not register worker request.");
+
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
+        linked.CancelAfter(_options.RequestTimeout);
         try
         {
             if (!allowStopping && State != WorkerLifecycleState.Ready)
                 throw new InvalidOperationException($"Worker is not ready (state: {State}).");
 
-            long sequence = ++_sequence;
-            var request = new WorkerProtocolEnvelope
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
+            await _writeLock.WaitAsync(linked.Token).ConfigureAwait(false);
+            try
             {
-                Kind = WorkerMessageKind.Request,
-                WorldId = _options.WorldId,
-                RequestId = Guid.NewGuid(),
-                Sequence = sequence,
-                Operation = operation,
-                Payload = payload
-            };
-            return await ExchangeLockedAsync(request, _options.RequestTimeout, cancellationToken).ConfigureAwait(false);
+                await WorkerFrameCodec.WriteAsync(_stream, bytes,
+                    WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
+            }
+            finally { _writeLock.Release(); }
+
+            return await pending.Completion.Task.WaitAsync(linked.Token).ConfigureAwait(false);
         }
-        finally
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && !_lifetime.IsCancellationRequested)
         {
-            _requestLock.Release();
+            throw new TimeoutException($"Worker request '{operation}' exceeded its deadline.");
         }
+        finally { _pending.TryRemove(request.RequestId.Value, out _); }
     }
 
-    private async Task<JsonDocument> ExchangeAsync(
-        WorkerProtocolEnvelope request,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
+    private async Task<JsonDocument> ExchangeHandshakeAsync(
+        WorkerProtocolEnvelope request, TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        linked.CancelAfter(timeout);
+        byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
+        await WorkerFrameCodec.WriteAsync(_stream, bytes,
+            WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
+        return await WorkerFrameCodec.ReadAsync(_stream,
+            WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false)
+            ?? throw new EndOfStreamException("Worker closed the IPC stream during handshake.");
+    }
+
+    private async Task RunReaderLoopAsync()
+    {
         try
         {
-            return await ExchangeLockedAsync(request, timeout, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _requestLock.Release();
-        }
-    }
+            while (!_lifetime.IsCancellationRequested)
+            {
+                using JsonDocument? document = await WorkerFrameCodec.ReadAsync(
+                    _stream, WorkerProtocolConstants.DefaultMaxSnapshotFrameBytes, _lifetime.Token).ConfigureAwait(false);
+                if (document is null)
+                    throw new EndOfStreamException("Worker closed the IPC stream.");
 
-    private async Task<JsonDocument> ExchangeLockedAsync(
-        WorkerProtocolEnvelope request,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
-            linked.CancelAfter(timeout);
-            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
-            await WorkerFrameCodec.WriteAsync(_stream, bytes, WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false);
-            JsonDocument response = await WorkerFrameCodec.ReadAsync(_stream, WorkerProtocolConstants.DefaultMaxCommandFrameBytes, linked.Token).ConfigureAwait(false)
-                ?? throw new EndOfStreamException("Worker closed the IPC stream.");
-            WorkerProtocolEnvelope? envelope = response.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonOptions);
-            if (!WorkerProtocolValidator.TryValidate(envelope, out _) ||
-                envelope!.Kind != WorkerMessageKind.Response ||
-                envelope.WorldId != request.WorldId ||
-                envelope.RequestId != request.RequestId ||
-                envelope.Sequence != request.Sequence)
-            {
-                response.Dispose();
-                throw new InvalidDataException("Worker response did not match its request.");
+                WorkerProtocolEnvelope? envelope = document.RootElement.Deserialize<WorkerProtocolEnvelope>(JsonOptions);
+                if (!WorkerProtocolValidator.TryValidate(envelope, out _) || envelope!.WorldId != _options.WorldId)
+                    throw new InvalidDataException("Worker sent an invalid or foreign-world envelope.");
+
+                if (envelope.Kind == WorkerMessageKind.Event)
+                {
+                    long expected = Interlocked.Read(ref _lastEventSequence) + 1;
+                    if (envelope.EventSequence != expected || envelope.Sequence != expected)
+                        throw new InvalidDataException("Worker event sequence is not strictly increasing.");
+                    Interlocked.Exchange(ref _lastEventSequence, expected);
+                    if (!_events.Writer.TryWrite(envelope.Payload.Clone()))
+                        throw new InvalidOperationException("Supervisor event queue overflowed.");
+                    continue;
+                }
+
+                if (envelope.Kind != WorkerMessageKind.Response || envelope.RequestId is null)
+                    throw new InvalidDataException("Worker sent an unexpected message kind.");
+
+                if (_pending.TryGetValue(envelope.RequestId.Value, out PendingRequest? pending))
+                {
+                    if (pending.Sequence != envelope.Sequence)
+                        throw new InvalidDataException("Worker response sequence does not match its request.");
+                    JsonDocument response = JsonDocument.Parse(document.RootElement.GetRawText());
+                    if (envelope.Ok != true)
+                    {
+                        string code = envelope.Error?.ToString() ?? "UnknownWorkerError";
+                        response.Dispose();
+                        pending.Completion.TrySetException(new InvalidOperationException($"Worker request failed: {code}."));
+                    }
+                    else pending.Completion.TrySetResult(response);
+                }
             }
-            if (envelope.Ok != true)
+        }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (State is not (WorkerLifecycleState.Stopping or WorkerLifecycleState.Stopped))
             {
-                string error = envelope.Error?.ToString() ?? "UnknownWorkerError";
-                response.Dispose();
-                throw new InvalidOperationException($"Worker request '{request.Operation}' failed: {error}.");
+                SetState(WorkerLifecycleState.Faulted);
+                TryKill();
             }
-            return response;
+            foreach (PendingRequest pending in _pending.Values)
+                pending.Completion.TrySetException(new IOException("Worker IPC reader stopped.", ex));
+        }
+        finally { _events.Writer.TryComplete(); }
     }
 
     private async Task RunHeartbeatAsync()
@@ -348,7 +392,11 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         {
             await _process.WaitForExitAsync().ConfigureAwait(false);
             if (State is not (WorkerLifecycleState.Stopping or WorkerLifecycleState.Stopped))
+            {
                 SetState(WorkerLifecycleState.Faulted);
+                foreach (PendingRequest pending in _pending.Values)
+                    pending.Completion.TrySetException(new EndOfStreamException("Worker process exited."));
+            }
         }
         catch { SetState(WorkerLifecycleState.Faulted); }
     }
@@ -362,6 +410,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
     private async Task CleanupTransportAsync()
     {
+        if (Interlocked.Exchange(ref _transportCleaned, 1) != 0) return;
         try { await _stream.DisposeAsync().ConfigureAwait(false); } catch { }
         _pipeServer?.Dispose();
         _socketListener?.Dispose();
@@ -373,8 +422,7 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            return;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         if (State is not (WorkerLifecycleState.Stopped or WorkerLifecycleState.Faulted))
         {
             try { await StopAsync().ConfigureAwait(false); }
@@ -383,10 +431,21 @@ public sealed class GamePhysicsWorkerSupervisor : IAsyncDisposable
         _heartbeatStop.Cancel();
         _lifetime.Cancel();
         await CleanupTransportAsync().ConfigureAwait(false);
+        if (_readerTask is not null) { try { await _readerTask.ConfigureAwait(false); } catch { } }
         try { await _exitMonitor.ConfigureAwait(false); } catch { }
-        _requestLock.Dispose();
+        foreach (PendingRequest pending in _pending.Values)
+            pending.Completion.TrySetException(new ObjectDisposedException(nameof(GamePhysicsWorkerSupervisor)));
+        _writeLock.Dispose();
         _heartbeatStop.Dispose();
         _lifetime.Dispose();
         _process.Dispose();
+    }
+
+    private sealed class PendingRequest
+    {
+        public PendingRequest(long sequence) => Sequence = sequence;
+        public long Sequence { get; }
+        public TaskCompletionSource<JsonDocument> Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
