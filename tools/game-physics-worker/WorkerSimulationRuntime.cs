@@ -106,7 +106,7 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
         {
             JsonElement result = item.Operation switch
             {
-                "CreateWorld" => _adapter.CreateWorld(item.Payload.TryGetProperty("worldId", out _) ? ReadWorldId(item.Payload) : _worldId, item.Payload),
+                "CreateWorld" => _adapter.CreateWorld(_worldId, item.Payload),
                 "CreateBody" => _adapter.CreateBody(item.Payload),
                 "SetVelocity" => _adapter.SetVelocity(item.Payload),
                 "ApplyImpulse" => _adapter.ApplyImpulse(item.Payload),
@@ -128,13 +128,6 @@ public sealed class WorkerSimulationRuntime : IAsyncDisposable
     }
 
     private Guid _worldId;
-
-    private static Guid ReadWorldId(JsonElement payload)
-    {
-        if (!payload.TryGetProperty("worldId", out JsonElement value) || !value.TryGetGuid(out Guid id) || id == Guid.Empty)
-            throw new WorkerCommandException(WorkerErrorCode.InvalidArgument, "worldId is required in CreateWorld.");
-        return id;
-    }
 
     public void SetWorldId(Guid worldId)
     {
