@@ -107,7 +107,8 @@ static async Task RunRoundTripAsync()
     var shutdown = new WorkerProtocolEnvelope
     {
         Kind = WorkerMessageKind.Request, WorldId = worldId, RequestId = Guid.NewGuid(),
-        Sequence = 3, Operation = "Shutdown"
+        Sequence = 3, Operation = "Shutdown",
+        Payload = JsonSerializer.SerializeToElement(new { })
     };
     using (JsonDocument? stopped = await SendAsync(stream, shutdown))
         Assert(stopped is not null && stopped.RootElement.GetProperty("ok").GetBoolean(), "worker acknowledges graceful shutdown");
