@@ -304,3 +304,51 @@ Floating-point physics tests use tolerances/invariants, not bit-identical transf
 3. Choose the first backend only after prototype and isolation tests.
 4. Add contracts and manifest validation after lifecycle is proven.
 5. Keep Creator UI and AI/NPC integration out of the critical path until Balanced core passes acceptance tests.
+
+
+## 17. Phase 0 source-audit findings (2026-11-25)
+
+This section records source-level findings from the current `opensim-next-dev` branch. It is an audit, not a claim that isolated Game Physics worlds have already been implemented or runtime-tested.
+
+### Backend capability matrix
+
+| Area | BulletS | ubOde | Current assessment |
+|---|---|---|---|
+| Underlying world allocation | `PE.Initialize(...)` returns a per-scene Bullet World | `WorldCreate()` returns an ODE world handle | Both expose a world allocation primitive |
+| Scene ownership | `BSScene` owns world, shapes, constraints, object collections | `ODEScene` owns world/spaces/contact group and object collections | Per-instance state exists, but Region dependencies remain |
+| Simulation | `DoPhysicsStep` / `Simulate`; optional dedicated thread | `Simulate` and ODE QuickStep | Both have stepping paths |
+| Collision data | Bullet collision/update buffers and scene collision collections | ODE near-callback/contact joints and collision collections | Capabilities exist; adapter normalization remains |
+| Constraints | `BSConstraintCollection` | ODE contact joints and related joint operations | Needs feature-by-feature audit |
+| Raycast | Bullet raycast APIs and filters | ODE raycast manager | Candidate capability on both |
+| Region coupling | `AddRegion(Scene)`, Region terrain, mesher, Scene callbacks | Constructor requires `Scene`; Region mesher, terrain, asset/runtime dependencies | Not a standalone Game World API |
+| Shared mutable/global state | `BSParam` is a static class with global simulation/configuration values | `SimulationLock` is static and serializes critical ODE simulation/disposal sections | Isolation risks require remediation or process/worker boundary |
+| Teardown | `Dispose` clears objects/constraints/shapes/terrain and calls `PE.Shutdown(World)` | `Dispose` destroys spaces, contact group, terrain and ODE world | Native cleanup exists; concurrent teardown safety needs proof |
+
+### BulletS blockers and opportunities
+
+1. `BSScene.Initialise` creates a backend world through `PE.Initialize`, then creates a constraint collection and terrain manager. This is the strongest existing candidate for an adapter-backed world.
+2. `BSParam` is static. Values such as `Active`, `UseSeparatePhysicsThread`, `PhysicsTimeStep`, damping, mass/velocity limits, mesh policy, and terrain policy are shared across every `BSScene` in the process. Different Game Instances cannot safely select independent profiles while these values remain global.
+3. The separate physics thread reads static `BSParam.Active` and `BSParam.PhysicsTimeStep`. `Dispose` sets `m_initialized = false` and then proceeds to destroy world resources, but the inspected method does not explicitly signal and join the physics thread before calling `PE.Shutdown(World)`. This is a teardown race to resolve before reuse.
+4. The unmanaged adapter `BSAPIUnman` owns pinned parameter/collision/update buffers and calls native initialize/step/shutdown APIs. Adapter lifetime and buffer ownership must be per world, and shutdown must happen only after stepping has stopped.
+5. Engine selection can mutate static `BSParam` values (for example BulletXNA capability fallbacks), another reason to isolate configuration/capabilities per runtime instance.
+
+**Conclusion:** BulletS is the leading prototype candidate because its backend API allocates a distinct world, but the current Region `BSScene` cannot yet be treated as a safe multi-tenant Game Physics host. First refactor configuration into an instance-owned immutable/runtime settings object (or isolate workers by process), and establish stop/join/shutdown ordering.
+
+### ubOde blockers and opportunities
+
+1. `ODEScene` allocates its own ODE world and collision spaces, so native world state is instance-owned.
+2. Its constructor requires an actual Region `Scene`, registers itself as that Scene's `PhysicsScene`, and later obtains meshing and other services from the Region. This is not a standalone world factory.
+3. `SimulationLock` is static. ODE simulation and disposal use this shared lock, so multiple worlds in one process are not fully independent and may serialize their critical sections.
+4. ODE thread-data allocation and native resource destruction must be performed with the correct ODE thread context. This must be included in the worker lifecycle proof.
+5. ODE initialization reads configuration and creates Region-sized spaces/terrain. A Game Runtime adapter would need an explicit world configuration and asset/mesher service boundary rather than borrowing an arbitrary Region Scene.
+
+**Conclusion:** ubOde is a viable comparison backend, but the static lock and Region-bound constructor are significant integration costs. Do not choose it solely because it has a native per-world handle.
+
+### Updated Phase 0 implementation decision
+
+Do not yet build a production Game Physics adapter on top of either Region module. The next spike should compare two safe approaches:
+
+- **In-process refactor:** extract a backend-owned world core from Region module lifecycle; move global configuration to per-world settings; provide explicit simulation-thread start/stop/join; remove global serialization where backend thread-safety permits.
+- **Dedicated worker process:** run isolated Game Runtime physics worker(s), each hosting one or a bounded number of worlds, with a narrow IPC protocol, resource limits, health checks, and restart boundaries. This is safer for native crashes and global static state but adds IPC and deployment complexity.
+
+The spike must measure initialization cost, steady-state step cost, teardown reliability, and two-world isolation. It must not change existing Region physics behavior. The choice between in-process refactor and worker process is intentionally open until those tests exist.
