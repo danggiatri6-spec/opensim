@@ -117,7 +117,7 @@ Project creation/editing routes are a separate next slice. Do not combine them w
 The first implementation slice now exists in tools/game-runtime:
 
 - GameCreatorRequestAuthenticator: validates the principal-bound bearer token through IAuthenticationService.Verify, fixed at 30 minutes.
-- GameCreatorApiHandler: GET/POST JSON handler under /creator/instances; HTTPS required; 16 KiB request-body cap; bounded pagination; no-store responses; owner identity comes only from the authenticated principal.
+- GameCreatorApiHandler: GET/POST JSON handler under /creator/instances; HTTPS required; 16 KiB request-body cap; bounded pagination; shared in-memory limit of 120 requests per principal per minute; no-store responses; owner identity comes only from the authenticated principal.
 - GameCreatorServiceConnector: opt-in Robust IServiceConnector; loads the configured AuthenticationService plugin and registers GET/POST handlers only when [GameRuntimeService] Enabled=true.
 - Connector implements IDisposable, unregisters its GET/POST handlers, and disposes the Game Runtime. Robust ServerMain now disposes loaded IDisposable service connectors after HTTP server shutdown and before stopping the thread pool; an AppDomain.ProcessExit hook remains a fallback. A dedicated multi-instance Robust shutdown acceptance test is still required.
 - The Game Runtime project now references the existing Robust HTTP server and handler contracts so the connector can be loaded as GameRuntime.dll:GameCreatorServiceConnector.
@@ -158,7 +158,7 @@ Routes implemented:
 | GET | /creator/instances/{instance_id} | Read only an owned instance |
 | POST | /creator/instances/{instance_id}/stop | Stop only an owned instance |
 
-The POST body rejects owner identity fields. The handler never accepts a client-supplied OwnerID as authority.
+The POST body rejects owner identity fields. The handler never accepts a client-supplied OwnerID as authority. The rate limiter is process-local; multi-Robust deployments still need a shared gateway/distributed quota policy for grid-wide enforcement.
 
 ### Remaining acceptance gates
 
@@ -178,7 +178,7 @@ The POST body rejects owner identity fields. The handler never accepts a client-
 - [x] Recorded the authenticated-principal and API boundary decision.
 - [x] Implement principal-bound request authenticator and positive/negative token tests (CI passed).
 - [x] Implement Creator Runtime HTTP handler routes and HTTPS/body/pagination safeguards.
-- [ ] Add handler-level routing, body-limit, JSON-type, and owner-spoofing integration tests.
+- [x] Add handler-level POST/GET/stop routing, HTTPS rejection, oversized-body, owner-spoofing, and per-principal limiter tests (CI pending for latest additions).
 - [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.
 - [x] Add explicit Robust ServerMain disposal of loaded IDisposable service connectors; connector removes routes and disposes Game Runtime.
 - [ ] Add Robust-level acceptance test proving all live Game Instances and Worker processes are reaped during host shutdown.
