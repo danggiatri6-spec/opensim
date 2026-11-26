@@ -88,8 +88,7 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
             using JsonDocument document = JsonDocument.Parse(json);
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object
-                || root.EnumerateObject().Any(p => p.Name.Equals("OwnerID", StringComparison.OrdinalIgnoreCase)
-                    || p.Name.Equals("owner_id", StringComparison.OrdinalIgnoreCase))
+                || root.EnumerateObject().Any(p => IsOwnerIdentityField(p.Name))
                 || !root.TryGetProperty("project_id", out JsonElement projectValue)
                 || !root.TryGetProperty("revision", out JsonElement revisionValue)
                 || projectValue.ValueKind != JsonValueKind.String
@@ -143,6 +142,14 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
         List<GameInstance> instances = _runtime.GetOwnedInstancesAsync(ownerID, offset, limit)
             .GetAwaiter().GetResult();
         return JsonResponse(response, HttpStatusCode.OK, new { instances });
+    }
+
+    private static bool IsOwnerIdentityField(string name)
+    {
+        string normalized = name.Replace("_", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal);
+        return normalized.Equals("ownerid", StringComparison.OrdinalIgnoreCase)
+            || normalized.Equals("owner", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryReadBody(Stream body, IOSHttpRequest request, out string json)
