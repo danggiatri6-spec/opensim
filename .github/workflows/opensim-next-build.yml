@@ -54,6 +54,15 @@ jobs:
           test -f artifacts/game-runtime/GameRuntime.dll
           test -f artifacts/game-runtime/GamePhysicsWorker.Supervisor.dll
           test -f artifacts/game-runtime/GamePhysicsWorker.Protocol.dll
+          test -f artifacts/game-runtime/OpenSim.Server.Base.dll
+          test -f artifacts/game-runtime/OpenSim.Server.Handlers.dll
+          test -f artifacts/game-runtime/OpenSim.Framework.Servers.HttpServer.dll
+          test -f artifacts/game-runtime/OpenSim.Services.Interfaces.dll
+          test -f artifacts/game-runtime/OpenSim.Services.UserAccountService.dll
+          test -f artifacts/game-runtime/OpenSim.Services.Base.dll
+          test -f artifacts/game-runtime/OpenSim.Data.dll
+          test -f artifacts/game-runtime/OpenMetaverseTypes.dll
+          test -f artifacts/game-runtime/Nini.dll
           test -f artifacts/game-runtime/worker/GamePhysicsWorker.dll
           test -f artifacts/game-runtime/worker/GamePhysicsWorker.runtimeconfig.json
 
