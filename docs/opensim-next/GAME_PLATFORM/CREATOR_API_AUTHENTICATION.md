@@ -147,7 +147,7 @@ WorkerAssemblyPath = "worker/GamePhysicsWorker.dll"
 MaximumActiveInstances = 16
 ```
 
-To expose the API, an operator must explicitly set Enabled = true, deploy the complete Game Runtime bundle, configure the existing AuthenticationService, and serve the Robust endpoint over HTTPS. The handler rejects requests when IOSHttpRequest.IsSecured is false. TLS termination at an external reverse proxy is not supported by this initial slice because trusted-proxy identity/transport headers have not been designed.
+Extract the published bundle into the Robust assembly directory (normally bin), keeping GameRuntime.dll, its copied OpenSim dependencies, and the worker/ subdirectory together. The connector loader resolves the GameRuntime.dll entry relative to the Robust process working directory; if the deployment uses a different layout, use the corresponding absolute assembly path in the ServiceList value.\n\nTo expose the API, an operator must explicitly set Enabled = true, deploy the complete Game Runtime bundle, configure the existing AuthenticationService, and serve the Robust endpoint over HTTPS. The handler rejects requests when IOSHttpRequest.IsSecured is false. TLS termination at an external reverse proxy is not supported by this initial slice because trusted-proxy identity/transport headers have not been designed.
 
 Routes implemented:
 
