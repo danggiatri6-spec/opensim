@@ -239,30 +239,41 @@ namespace OpenSim.Server
 
             loader = new PluginLoader(m_Server.Config, registryLocation);
 
-            int res = m_Server.Run();
-
-            m_Server?.Shutdown();
-
-            // Service connectors may own child processes and other host resources.
-            // Dispose them before stopping the thread pool and exiting the process.
-            for (int i = m_ServiceConnectors.Count - 1; i >= 0; --i)
+            int res = 0;
+            try
             {
-                if (m_ServiceConnectors[i] is IDisposable disposable)
+                res = m_Server.Run();
+            }
+            finally
+            {
+                try
                 {
-                    try
+                    m_Server?.Shutdown();
+                }
+                finally
+                {
+                    // Service connectors may own child processes and other host resources.
+                    // Dispose them before stopping the thread pool and exiting the process.
+                    for (int i = m_ServiceConnectors.Count - 1; i >= 0; --i)
                     {
-                        disposable.Dispose();
+                        if (m_ServiceConnectors[i] is IDisposable disposable)
+                        {
+                            try
+                            {
+                                disposable.Dispose();
+                            }
+                            catch (Exception e)
+                            {
+                                m_log.ErrorFormat("[SERVER]: Failed to dispose service connector {0}: {1}",
+                                    m_ServiceConnectors[i].GetType().FullName, e);
+                            }
+                        }
                     }
-                    catch (Exception e)
-                    {
-                        m_log.ErrorFormat("[SERVER]: Failed to dispose service connector {0}: {1}",
-                            m_ServiceConnectors[i].GetType().FullName, e);
-                    }
+                    m_ServiceConnectors.Clear();
+
+                    Util.StopThreadPool();
                 }
             }
-            m_ServiceConnectors.Clear();
-
-            Util.StopThreadPool();
 
             Environment.Exit(res);
 
