@@ -119,7 +119,7 @@ The first implementation slice now exists in tools/game-runtime:
 - GameCreatorRequestAuthenticator: validates the principal-bound bearer token through IAuthenticationService.Verify, fixed at 30 minutes.
 - GameCreatorApiHandler: GET/POST JSON handler under /creator/instances; HTTPS required; 16 KiB request-body cap; bounded pagination; no-store responses; owner identity comes only from the authenticated principal.
 - GameCreatorServiceConnector: opt-in Robust IServiceConnector; loads the configured AuthenticationService plugin and registers GET/POST handlers only when [GameRuntimeService] Enabled=true.
-- Connector currently uses an AppDomain.ProcessExit disposal hook as a final host-process shutdown fallback. This is not yet equivalent to a tested, explicit Robust connector unload lifecycle; graceful host shutdown acceptance remains a release gate.
+- Connector implements IDisposable, unregisters its GET/POST handlers, and disposes the Game Runtime. Robust ServerMain now disposes loaded IDisposable service connectors after HTTP server shutdown and before stopping the thread pool; an AppDomain.ProcessExit hook remains a fallback. A dedicated multi-instance Robust shutdown acceptance test is still required.
 - The Game Runtime project now references the existing Robust HTTP server and handler contracts so the connector can be loaded as GameRuntime.dll:GameCreatorServiceConnector.
 
 ### Robust configuration (opt-in)
@@ -180,6 +180,6 @@ The POST body rejects owner identity fields. The handler never accepts a client-
 - [x] Implement Creator Runtime HTTP handler routes and HTTPS/body/pagination safeguards.
 - [ ] Add handler-level routing, body-limit, JSON-type, and owner-spoofing integration tests.
 - [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.
-- [ ] Replace ProcessExit-only fallback with explicit Robust connector unload/host shutdown ownership and acceptance tests.
+- [x] Add explicit Robust ServerMain disposal of loaded IDisposable service connectors; connector removes routes and disposes Game Runtime.\n- [ ] Add Robust-level acceptance test proving all live Game Instances and Worker processes are reaped during host shutdown.
 - [ ] Verify deployed-bundle connector loading, Linux/Windows Robust startup, authenticated API calls, cross-owner denial, and clean shutdown. The current CI proves compilation and packaging, not live Robust loading.
 - [ ] Enable only after explicit operator configuration.
