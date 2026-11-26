@@ -48,6 +48,11 @@ internal static class GameCreatorRequestAuthenticatorTests
         Assert(status == GameCreatorAuthenticationStatus.InvalidCredentials,
             "bearer tokens containing whitespace are rejected");
 
+        status = authenticator.Authenticate(
+            "Bearer " + new string('x', 4097), ownerA.ToString(), out authenticated);
+        Assert(status == GameCreatorAuthenticationStatus.InvalidCredentials,
+            "oversized bearer tokens are rejected before verification");
+
         authService.ThrowOnVerify = true;
         status = authenticator.Authenticate(
             "Bearer valid-token", ownerA.ToString(), out authenticated);
