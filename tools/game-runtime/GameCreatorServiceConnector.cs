@@ -66,10 +66,20 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
             return;
         _disposed = true;
         AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
-        if (_getHandler is not null)
-            _server.RemoveStreamHandler("GET", "/creator/instances");
-        if (_postHandler is not null)
-            _server.RemoveStreamHandler("POST", "/creator/instances");
-        _runtime?.Dispose();
+        try
+        {
+            if (_getHandler is not null)
+                _server.RemoveStreamHandler("GET", "/creator/instances");
+            if (_postHandler is not null)
+                _server.RemoveStreamHandler("POST", "/creator/instances");
+        }
+        catch
+        {
+            // Host shutdown may already have torn down the HTTP server.
+        }
+        finally
+        {
+            _runtime?.Dispose();
+        }
     }
 }
