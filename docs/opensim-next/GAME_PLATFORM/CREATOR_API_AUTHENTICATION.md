@@ -170,7 +170,7 @@ Routes implemented:
 | GET | /creator/instances/{instance_id} | Read only an owned instance |
 | POST | /creator/instances/{instance_id}/stop | Stop only an owned instance |
 
-The POST body rejects owner identity fields. The handler never accepts a client-supplied OwnerID as authority. The rate limiter is process-local; multi-Robust deployments still need a shared gateway/distributed quota policy for grid-wide enforcement.
+The POST body rejects owner identity fields. The handler never accepts a client-supplied OwnerID as authority. This first API slice manages live instances only; Creator project create/edit/publish HTTP routes and the Creator UI are separate follow-up work. Projects must already exist through the Game Project service before an instance can be started. The rate limiter is process-local; multi-Robust deployments still need a shared gateway/distributed quota policy for grid-wide enforcement.
 
 ### Remaining acceptance gates
 
