@@ -112,7 +112,64 @@ Project creation/editing routes are a separate next slice. Do not combine them w
 4. Add an explicit connector shutdown/disposal integration path and a real Robust startup/shutdown acceptance test.
 5. Keep `[GameRuntimeService].Enabled=false` until all preceding tests pass and an operator explicitly enables the feature.
 
-## 7. Current status
+## 7. Implemented API slice
+
+The first implementation slice now exists in tools/game-runtime:
+
+- GameCreatorRequestAuthenticator: validates the principal-bound bearer token through IAuthenticationService.Verify, fixed at 30 minutes.
+- GameCreatorApiHandler: GET/POST JSON handler under /creator/instances; HTTPS required; 16 KiB request-body cap; bounded pagination; no-store responses; owner identity comes only from the authenticated principal.
+- GameCreatorServiceConnector: opt-in Robust IServiceConnector; loads the configured AuthenticationService plugin and registers GET/POST handlers only when [GameRuntimeService] Enabled=true.
+- Connector currently uses an AppDomain.ProcessExit disposal hook as a final host-process shutdown fallback. This is not yet equivalent to a tested, explicit Robust connector unload lifecycle; graceful host shutdown acceptance remains a release gate.
+- The Game Runtime project now references the existing Robust HTTP server and handler contracts so the connector can be loaded as GameRuntime.dll:GameCreatorServiceConnector.
+
+### Robust configuration (opt-in)
+
+Add the connector to the existing [ServiceList] entries (preserve all current values):
+
+```ini
+[ServiceList]
+GameRuntime = "GameRuntime.dll:GameCreatorServiceConnector"
+```
+
+Keep the existing authentication service configured:
+
+```ini
+[AuthenticationService]
+; Keep the grid's existing LocalServiceModule value here.
+```
+
+The Game Runtime section remains disabled unless deliberately enabled:
+
+```ini
+[GameRuntimeService]
+Enabled = false
+WorkerAssemblyPath = "worker/GamePhysicsWorker.dll"
+MaximumActiveInstances = 16
+```
+
+To expose the API, an operator must explicitly set Enabled = true, deploy the complete Game Runtime bundle, configure the existing AuthenticationService, and serve the Robust endpoint over HTTPS. The handler rejects requests when IOSHttpRequest.IsSecured is false. TLS termination at an external reverse proxy is not supported by this initial slice because trusted-proxy identity/transport headers have not been designed.
+
+Routes implemented:
+
+| Method | Route | Behavior |
+|---|---|---|
+| POST | /creator/instances | Start using project_id and revision |
+| GET | /creator/instances | List authenticated creator's instances; offset/limit bounded |
+| GET | /creator/instances/{instance_id} | Read only an owned instance |
+| POST | /creator/instances/{instance_id}/stop | Stop only an owned instance |
+
+The POST body rejects owner identity fields. The handler never accepts a client-supplied OwnerID as authority.
+
+### Remaining acceptance gates
+
+- Unit/integration tests for handler routing, HTTPS rejection, body limits, pagination, JSON type errors, and owner-field spoofing.
+- Verify the actual Robust connector loader can load GameRuntime.dll:GameCreatorServiceConnector from the deployed bundle.
+- Verify the deployment bundle includes all referenced OpenSim assemblies and the authentication plugin dependencies.
+- Add explicit connector unload/host shutdown ownership instead of relying only on ProcessExit.
+- Linux and Windows end-to-end Robust startup, authenticated API request, unauthorized cross-owner access, and shutdown tests.
+- Only then mark Creator API registration complete and consider enabling it in production.
+
+## 8. Current status
 
 - [x] Audited Robust connector loading in `ServerMain`.
 - [x] Audited existing service plugin loading convention.
