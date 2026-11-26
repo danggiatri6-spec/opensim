@@ -12,13 +12,25 @@ namespace OpenSim.GameRuntime;
 /// </summary>
 public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
 {
-    private readonly GameRuntimeServicePlugin? _runtime;
+    private readonly IGameRuntimeService? _runtime;
+    private readonly IDisposable? _runtimeDisposable;
     private readonly IHttpServer _server;
     private GameCreatorApiHandler? _getHandler;
     private GameCreatorApiHandler? _postHandler;
     private bool _disposed;
 
     public GameCreatorServiceConnector(IConfigSource config, IHttpServer server, string configName)
+        : this(config, server, configName, null, null)
+    {
+    }
+
+    // Dependency-injection overload for connector-level tests and embedded hosts.
+    public GameCreatorServiceConnector(
+        IConfigSource config,
+        IHttpServer server,
+        string configName,
+        IGameRuntimeService? runtimeOverride,
+        IAuthenticationService? authenticationOverride)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(server);
@@ -28,20 +40,33 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
         if (section?.GetBoolean("Enabled", false) != true)
             return;
 
-        _runtime = new GameRuntimeServicePlugin(config);
+        if (runtimeOverride is not null)
+        {
+            _runtime = runtimeOverride;
+            _runtimeDisposable = runtimeOverride as IDisposable;
+        }
+        else
+        {
+            var plugin = new GameRuntimeServicePlugin(config);
+            _runtime = plugin;
+            _runtimeDisposable = plugin;
+        }
 
         try
         {
-            IConfig? authenticationConfig = config.Configs["AuthenticationService"];
-            string authenticationModule = authenticationConfig?.GetString("LocalServiceModule", string.Empty)
-                ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(authenticationModule))
-                throw new InvalidOperationException(
-                    "[AuthenticationService] LocalServiceModule is required when Creator API is enabled.");
+            IAuthenticationService authenticationService = authenticationOverride!;
+            if (authenticationService is null)
+            {
+                IConfig? authenticationConfig = config.Configs["AuthenticationService"];
+                string authenticationModule = authenticationConfig?.GetString("LocalServiceModule", string.Empty)
+                    ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(authenticationModule))
+                    throw new InvalidOperationException(
+                        "[AuthenticationService] LocalServiceModule is required when Creator API is enabled.");
 
-            IAuthenticationService authenticationService =
-                ServerUtils.LoadPlugin<IAuthenticationService>(
+                authenticationService = ServerUtils.LoadPlugin<IAuthenticationService>(
                     authenticationModule, new object[] { config });
+            }
 
             var authenticator = new GameCreatorRequestAuthenticator(authenticationService);
             var rateLimiter = new GameCreatorRequestRateLimiter();
@@ -54,7 +79,7 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
         }
         catch
         {
-            _runtime.Dispose();
+            _runtimeDisposable?.Dispose();
             throw;
         }
     }
@@ -80,7 +105,7 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
         }
         finally
         {
-            _runtime?.Dispose();
+            _runtimeDisposable?.Dispose();
         }
     }
 }
