@@ -32,6 +32,9 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
     protected override byte[] ProcessRequest(
         string path, Stream requestData, IOSHttpRequest httpRequest, IOSHttpResponse httpResponse)
     {
+        if (!httpRequest.IsSecured)
+            return JsonResponse(httpResponse, HttpStatusCode.Forbidden, new { error = "https_required" });
+
         if (!TryAuthenticate(httpRequest, httpResponse, out UUID ownerID))
             return JsonResponse(httpResponse, (HttpStatusCode)httpResponse.StatusCode, new { error = "unauthorized" });
 
