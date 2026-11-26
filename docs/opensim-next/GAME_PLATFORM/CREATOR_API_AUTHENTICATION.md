@@ -116,7 +116,7 @@ Project creation/editing routes are a separate next slice. Do not combine them w
 
 The first implementation slice now exists in tools/game-runtime:
 
-- GameCreatorRequestAuthenticator: validates the principal-bound bearer token through IAuthenticationService.Verify, fixed at 30 minutes.
+- GameCreatorRequestAuthenticator: validates the principal-bound bearer token through IAuthenticationService.Verify, fixed at 30 minutes, with a 4 KiB token-length ceiling.
 - GameCreatorApiHandler: GET/POST JSON handler under /creator/instances; HTTPS required; 16 KiB request-body cap; bounded pagination; shared in-memory limit of 120 requests per principal per minute; no-store responses; owner identity comes only from the authenticated principal.
 - GameCreatorServiceConnector: opt-in Robust IServiceConnector; loads the configured AuthenticationService plugin and registers GET/POST handlers only when [GameRuntimeService] Enabled=true.
 - Connector implements IDisposable, unregisters its GET/POST handlers, and disposes the Game Runtime. Robust ServerMain now disposes loaded IDisposable service connectors after HTTP server shutdown and before stopping the thread pool; an AppDomain.ProcessExit hook remains a fallback. A dedicated multi-instance Robust shutdown acceptance test is still required.
