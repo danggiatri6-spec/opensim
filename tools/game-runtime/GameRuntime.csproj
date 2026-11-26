@@ -26,6 +26,15 @@
     <Reference Include="Nini">
       <HintPath>../../bin/Nini.dll</HintPath>
     </Reference>
+    <Reference Include="OpenSim.Framework.Servers.HttpServer">
+      <HintPath>../../bin/OpenSim.Framework.Servers.HttpServer.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenSim.Server.Base">
+      <HintPath>../../bin/OpenSim.Server.Base.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenSim.Server.Handlers">
+      <HintPath>../../bin/OpenSim.Server.Handlers.dll</HintPath>
+    </Reference>
     <ProjectReference Include="../game-physics-worker-supervisor/GamePhysicsWorker.Supervisor.csproj" />
   </ItemGroup>
 </Project>
