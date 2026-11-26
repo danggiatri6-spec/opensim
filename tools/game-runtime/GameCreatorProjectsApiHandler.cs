@@ -204,15 +204,23 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
 
     private static bool HasOwnerField(JsonElement element)
     {
-        if (element.ValueKind != JsonValueKind.Object) return false;
-        foreach (JsonProperty property in element.EnumerateObject())
+        if (element.ValueKind == JsonValueKind.Object)
         {
-            string key = property.Name.Replace("_", string.Empty, StringComparison.Ordinal)
-                .Replace("-", string.Empty, StringComparison.Ordinal);
-            if (key.Equals("owner", StringComparison.OrdinalIgnoreCase)
-                || key.Equals("ownerid", StringComparison.OrdinalIgnoreCase)
-                || key.Equals("authenticatedownerid", StringComparison.OrdinalIgnoreCase))
-                return true;
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                string key = property.Name.Replace("_", string.Empty, StringComparison.Ordinal)
+                    .Replace("-", string.Empty, StringComparison.Ordinal);
+                if (key.Equals("owner", StringComparison.OrdinalIgnoreCase)
+                    || key.Equals("ownerid", StringComparison.OrdinalIgnoreCase)
+                    || key.Equals("authenticatedownerid", StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (HasOwnerField(property.Value)) return true;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+                if (HasOwnerField(item)) return true;
         }
         return false;
     }
