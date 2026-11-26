@@ -1,6 +1,7 @@
 using System.Reflection;
 using Nini.Config;
 using OpenSim.Framework.Servers.HttpServer;
+using OpenSim.GameRuntime;
 using OpenSim.Server.Base;
 using OpenSim.Server.Handlers.Base;
 using OpenSim.Services.Interfaces;
