@@ -11,6 +11,7 @@ internal static class GameCreatorApiHandlerTests
 {
     public static void Run()
     {
+        TestRateLimiter();
         UUID creator = UUID.Random();
         var authService = new FakeAuthenticationService(creator, "creator-token");
         var runtime = new FakeRuntimeService();
@@ -72,6 +73,20 @@ internal static class GameCreatorApiHandlerTests
         handler.Handle("/creator/instances/" + instanceID + "/stop", stop.InputStream, stop, stopResponse);
         Assert(stopResponse.StatusCode == 404 && runtime.StopCalls == 1,
             "POST stop route delegates ownership-scoped lifecycle operation");
+    }
+
+    private static void TestRateLimiter()
+    {
+        var limiter = new GameCreatorRequestRateLimiter(2, 2, TimeSpan.FromMinutes(1));
+        UUID principal = UUID.Random();
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+        Assert(limiter.TryAcquire(principal, start), "first request in rate window is allowed");
+        Assert(limiter.TryAcquire(principal, start.AddSeconds(1)), "second request in rate window is allowed");
+        Assert(!limiter.TryAcquire(principal, start.AddSeconds(2)), "request above per-principal limit is rejected");
+        Assert(limiter.TryAcquire(principal, start.AddMinutes(1)), "request is allowed after its window resets");
+
+        UUID secondPrincipal = UUID.Random();
+        Assert(limiter.TryAcquire(secondPrincipal, start), "another principal has an independent rate window");
     }
 
     private static FakeRequest Request(
