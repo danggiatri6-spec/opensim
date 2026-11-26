@@ -243,6 +243,25 @@ namespace OpenSim.Server
 
             m_Server?.Shutdown();
 
+            // Service connectors may own child processes and other host resources.
+            // Dispose them before stopping the thread pool and exiting the process.
+            for (int i = m_ServiceConnectors.Count - 1; i >= 0; --i)
+            {
+                if (m_ServiceConnectors[i] is IDisposable disposable)
+                {
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception e)
+                    {
+                        m_log.ErrorFormat("[SERVER]: Failed to dispose service connector {0}: {1}",
+                            m_ServiceConnectors[i].GetType().FullName, e);
+                    }
+                }
+            }
+            m_ServiceConnectors.Clear();
+
             Util.StopThreadPool();
 
             Environment.Exit(res);
