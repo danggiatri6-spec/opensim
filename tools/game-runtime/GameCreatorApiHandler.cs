@@ -33,7 +33,7 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
         string path, Stream requestData, IOSHttpRequest httpRequest, IOSHttpResponse httpResponse)
     {
         if (!TryAuthenticate(httpRequest, httpResponse, out UUID ownerID))
-            return Json(httpResponse.StatusCode, new { error = "unauthorized" });
+            return JsonResponse(httpResponse, (HttpStatusCode)httpResponse.StatusCode, new { error = "unauthorized" });
 
         string[] segments = httpRequest.UriPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length < 2 || segments[0] != "creator" || segments[1] != "instances")
@@ -86,10 +86,10 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object
                 || root.TryGetProperty("owner_id", out _)
-                || root.TryGetProperty("OwnerID", out _)
+                || root.EnumerateObject().Any(p => p.Name.Equals("OwnerID", StringComparison.OrdinalIgnoreCase)\n                    || p.Name.Equals("owner_id", StringComparison.OrdinalIgnoreCase))
                 || !root.TryGetProperty("project_id", out JsonElement projectValue)
                 || !root.TryGetProperty("revision", out JsonElement revisionValue)
-                || !UUID.TryParse(projectValue.GetString(), out UUID projectID)
+                || projectValue.ValueKind != JsonValueKind.String\n                || !UUID.TryParse(projectValue.GetString(), out UUID projectID)
                 || projectID == UUID.Zero
                 || !revisionValue.TryGetInt64(out long revision)
                 || revision < 1)
