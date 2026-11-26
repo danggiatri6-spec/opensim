@@ -88,11 +88,12 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
             using JsonDocument document = JsonDocument.Parse(json);
             JsonElement root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object
-                || root.TryGetProperty("owner_id", out _)
-                || root.EnumerateObject().Any(p => p.Name.Equals("OwnerID", StringComparison.OrdinalIgnoreCase)\n                    || p.Name.Equals("owner_id", StringComparison.OrdinalIgnoreCase))
+                || root.EnumerateObject().Any(p => p.Name.Equals("OwnerID", StringComparison.OrdinalIgnoreCase)
+                    || p.Name.Equals("owner_id", StringComparison.OrdinalIgnoreCase))
                 || !root.TryGetProperty("project_id", out JsonElement projectValue)
                 || !root.TryGetProperty("revision", out JsonElement revisionValue)
-                || projectValue.ValueKind != JsonValueKind.String\n                || !UUID.TryParse(projectValue.GetString(), out UUID projectID)
+                || projectValue.ValueKind != JsonValueKind.String
+                || !UUID.TryParse(projectValue.GetString(), out UUID projectID)
                 || projectID == UUID.Zero
                 || !revisionValue.TryGetInt64(out long revision)
                 || revision < 1)
