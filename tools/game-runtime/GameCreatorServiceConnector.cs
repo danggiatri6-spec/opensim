@@ -97,8 +97,9 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
                     server.RemoveStreamHandler("GET", "/creator/instances");
                 if (_postHandler is not null)
                     server.RemoveStreamHandler("POST", "/creator/instances");
-                foreach (string method in new[] { "GET", "POST", "PUT", "PATCH" })
-                    server.RemoveStreamHandler(method, "/creator/projects");
+                if (_projectHandlers.Count > 0)
+                    foreach (string method in new[] { "GET", "POST", "PUT", "PATCH" })
+                        server.RemoveStreamHandler(method, "/creator/projects");
             }
             catch
             {
@@ -126,8 +127,9 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
                 _server.RemoveStreamHandler("GET", "/creator/instances");
             if (_postHandler is not null)
                 _server.RemoveStreamHandler("POST", "/creator/instances");
-            foreach (string method in new[] { "GET", "POST", "PUT", "PATCH" })
-                _server.RemoveStreamHandler(method, "/creator/projects");
+            if (_projectHandlers.Count > 0)
+                foreach (string method in new[] { "GET", "POST", "PUT", "PATCH" })
+                    _server.RemoveStreamHandler(method, "/creator/projects");
         }
         catch
         {
