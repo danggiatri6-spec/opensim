@@ -177,7 +177,9 @@ The POST body rejects owner identity fields. The handler never accepts a client-
 - [x] Confirmed principal-bound token verification exists in `IAuthenticationService`.
 - [x] Recorded the authenticated-principal and API boundary decision.
 - [x] Implement principal-bound request authenticator and positive/negative token tests (CI passed).
-- [x] Implement Creator Runtime HTTP handler routes and HTTPS/body/pagination safeguards.\n- [ ] Add handler-level routing, body-limit, JSON-type, and owner-spoofing integration tests.
-- [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.\n- [ ] Replace ProcessExit-only fallback with explicit Robust connector unload/host shutdown ownership and acceptance tests.
+- [x] Implement Creator Runtime HTTP handler routes and HTTPS/body/pagination safeguards.
+- [ ] Add handler-level routing, body-limit, JSON-type, and owner-spoofing integration tests.
+- [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.
+- [ ] Replace ProcessExit-only fallback with explicit Robust connector unload/host shutdown ownership and acceptance tests.
 - [ ] Verify deployed-bundle connector loading, Linux/Windows Robust startup, authenticated API calls, cross-owner denial, and clean shutdown. The current CI proves compilation and packaging, not live Robust loading.
 - [ ] Enable only after explicit operator configuration.
