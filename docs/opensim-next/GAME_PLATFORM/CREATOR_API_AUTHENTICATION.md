@@ -180,6 +180,7 @@ The POST body rejects owner identity fields. The handler never accepts a client-
 - [x] Implement Creator Runtime HTTP handler routes and HTTPS/body/pagination safeguards.
 - [ ] Add handler-level routing, body-limit, JSON-type, and owner-spoofing integration tests.
 - [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.
-- [x] Add explicit Robust ServerMain disposal of loaded IDisposable service connectors; connector removes routes and disposes Game Runtime.\n- [ ] Add Robust-level acceptance test proving all live Game Instances and Worker processes are reaped during host shutdown.
+- [x] Add explicit Robust ServerMain disposal of loaded IDisposable service connectors; connector removes routes and disposes Game Runtime.
+- [ ] Add Robust-level acceptance test proving all live Game Instances and Worker processes are reaped during host shutdown.
 - [ ] Verify deployed-bundle connector loading, Linux/Windows Robust startup, authenticated API calls, cross-owner denial, and clean shutdown. The current CI proves compilation and packaging, not live Robust loading.
 - [ ] Enable only after explicit operator configuration.
