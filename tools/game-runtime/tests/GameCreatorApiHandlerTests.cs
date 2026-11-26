@@ -52,6 +52,26 @@ internal static class GameCreatorApiHandlerTests
         handler.Handle("/creator/instances", oversized.InputStream, oversized, oversizedResponse);
         Assert(oversizedResponse.StatusCode == 400 && runtime.StartCalls == 1,
             "oversized Creator request body is rejected before runtime invocation");
+
+        var getHandler = new GameCreatorApiHandler("GET", authenticator, runtime);
+        FakeRequest list = Request("GET", "/creator/instances", string.Empty, creator);
+        FakeResponse listResponse = new();
+        getHandler.Handle("/creator/instances", list.InputStream, list, listResponse);
+        Assert(listResponse.StatusCode == 200 && runtime.ListCalls == 1,
+            "GET collection route lists only the authenticated creator's instances");
+
+        UUID instanceID = UUID.Random();
+        FakeRequest get = Request("GET", "/creator/instances/" + instanceID, string.Empty, creator);
+        FakeResponse getResponse = new();
+        getHandler.Handle("/creator/instances/" + instanceID, get.InputStream, get, getResponse);
+        Assert(getResponse.StatusCode == 404 && runtime.GetCalls == 1,
+            "GET instance route delegates ownership-scoped lookup");
+
+        FakeRequest stop = Request("POST", "/creator/instances/" + instanceID + "/stop", string.Empty, creator);
+        FakeResponse stopResponse = new();
+        handler.Handle("/creator/instances/" + instanceID + "/stop", stop.InputStream, stop, stopResponse);
+        Assert(stopResponse.StatusCode == 404 && runtime.StopCalls == 1,
+            "POST stop route delegates ownership-scoped lifecycle operation");
     }
 
     private static FakeRequest Request(
@@ -89,6 +109,9 @@ internal static class GameCreatorApiHandlerTests
     private sealed class FakeRuntimeService : IGameRuntimeService
     {
         public int StartCalls { get; private set; }
+        public int StopCalls { get; private set; }
+        public int GetCalls { get; private set; }
+        public int ListCalls { get; private set; }
         public UUID LastOwnerID { get; private set; }
         public Task<GameInstanceResult> StartInstanceAsync(UUID authenticatedOwnerID, UUID projectID, long revision, CancellationToken cancellationToken = default)
         {
@@ -100,12 +123,21 @@ internal static class GameCreatorApiHandlerTests
                 Instance = new GameInstance { InstanceID = UUID.Random(), OwnerID = authenticatedOwnerID, ProjectID = projectID, ProjectRevision = revision, State = GameInstanceState.Running }
             });
         }
-        public Task<GameInstanceResult> StopInstanceAsync(UUID authenticatedOwnerID, UUID instanceID, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
-        public Task<GameInstanceResult> GetInstanceAsync(UUID authenticatedOwnerID, UUID instanceID, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
-        public Task<List<GameInstance>> GetOwnedInstancesAsync(UUID authenticatedOwnerID, int offset, int limit, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new List<GameInstance>());
+        public Task<GameInstanceResult> StopInstanceAsync(UUID authenticatedOwnerID, UUID instanceID, CancellationToken cancellationToken = default)
+        {
+            StopCalls++;
+            return Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
+        }
+        public Task<GameInstanceResult> GetInstanceAsync(UUID authenticatedOwnerID, UUID instanceID, CancellationToken cancellationToken = default)
+        {
+            GetCalls++;
+            return Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
+        }
+        public Task<List<GameInstance>> GetOwnedInstancesAsync(UUID authenticatedOwnerID, int offset, int limit, CancellationToken cancellationToken = default)
+        {
+            ListCalls++;
+            return Task.FromResult(new List<GameInstance>());
+        }
     }
 
     private sealed class FakeRequest : IOSHttpRequest
