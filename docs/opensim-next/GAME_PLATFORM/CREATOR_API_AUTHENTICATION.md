@@ -138,6 +138,16 @@ Keep the existing authentication service configured:
 ; Keep the grid's existing LocalServiceModule value here.
 ```
 
+The Game Runtime also needs the existing Game Project storage service configuration. For an SQLite standalone grid, the project provider can use the same database file as the other standalone services:
+
+```ini
+[GameProjectService]
+StorageProvider = "OpenSim.Data.SQLite.dll:SQLiteGameProjectData"
+ConnectionString = "URI=file:OpenSim.db;UseUTF16Encoding=True"
+```
+
+For MySQL or another supported database, configure a matching IGameProjectData provider and connection string instead. Do not omit this section: the enabled runtime plugin initializes GameProjectService at startup.
+
 The Game Runtime section remains disabled unless deliberately enabled:
 
 ```ini
