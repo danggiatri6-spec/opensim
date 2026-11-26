@@ -183,5 +183,5 @@ The POST body rejects owner identity fields. The handler never accepts a client-
 - [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.
 - [x] Add explicit Robust ServerMain disposal of loaded IDisposable service connectors; connector removes routes and disposes Game Runtime.
 - [ ] Add Robust-level acceptance test proving all live Game Instances and Worker processes are reaped during host shutdown.
-- [ ] Verify deployed-bundle connector loading, Linux/Windows Robust startup, authenticated API calls, cross-owner denial, and clean shutdown. The current CI proves compilation and packaging, not live Robust loading.
+- [x] Verify the Robust ServerUtils plugin loader can load GameCreatorServiceConnector from the built GameRuntime assembly with the feature disabled (CI passed).\n- [ ] Verify deployed-bundle Robust startup, authenticated API calls, cross-owner denial, and clean shutdown on Linux/Windows. The current CI proves plugin-loader smoke loading, compilation, and packaging, not a live Robust server session.
 - [ ] Enable only after explicit operator configuration.
