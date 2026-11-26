@@ -12,6 +12,7 @@ internal static class GameCreatorApiHandlerTests
     public static void Run()
     {
         TestRateLimiter();
+        TestProjectRoutes();
         UUID creator = UUID.Random();
         var authService = new FakeAuthenticationService(creator, "creator-token");
         var runtime = new FakeRuntimeService();
@@ -73,6 +74,130 @@ internal static class GameCreatorApiHandlerTests
         handler.Handle("/creator/instances/" + instanceID + "/stop", stop.InputStream, stop, stopResponse);
         Assert(stopResponse.StatusCode == 404 && runtime.StopCalls == 1,
             "POST stop route delegates ownership-scoped lifecycle operation");
+    }
+
+    private static void TestProjectRoutes()
+    {
+        UUID owner = UUID.Random();
+        var auth = new GameCreatorRequestAuthenticator(new FakeAuthenticationService(owner, "creator-token"));
+        var projects = new FakeProjectService(owner);
+        var get = new GameCreatorProjectsApiHandler("GET", auth, projects);
+        var post = new GameCreatorProjectsApiHandler("POST", auth, projects);
+        var put = new GameCreatorProjectsApiHandler("PUT", auth, projects);
+        var patch = new GameCreatorProjectsApiHandler("PATCH", auth, projects);
+
+        FakeRequest create = Request("POST", "/creator/projects",
+            "{\"name\":\"My Game\",\"description\":\"prototype\"}", owner);
+        FakeResponse created = new();
+        post.Handle("/creator/projects", create.InputStream, create, created);
+        Assert(created.StatusCode == 201 && projects.CreateCalls == 1 && projects.LastOwner == owner,
+            "Creator can create a project using only the authenticated principal");
+
+        FakeRequest spoof = Request("POST", "/creator/projects",
+            "{\"name\":\"Spoof\",\"owner_id\":\"" + UUID.Random() + "\"}", owner);
+        FakeResponse spoofResponse = new();
+        post.Handle("/creator/projects", spoof.InputStream, spoof, spoofResponse);
+        Assert(spoofResponse.StatusCode == 400 && projects.CreateCalls == 1,
+            "project creation rejects client-supplied owner identity");
+
+        FakeRequest list = Request("GET", "/creator/projects", string.Empty, owner);
+        FakeResponse listResponse = new();
+        get.Handle("/creator/projects", list.InputStream, list, listResponse);
+        Assert(listResponse.StatusCode == 200 && projects.ListCalls == 1,
+            "project listing is scoped to the authenticated creator");
+
+        UUID projectID = projects.ProjectID;
+        FakeRequest read = Request("GET", "/creator/projects/" + projectID, string.Empty, owner);
+        FakeResponse readResponse = new();
+        get.Handle("/creator/projects/" + projectID, read.InputStream, read, readResponse);
+        Assert(readResponse.StatusCode == 200 && projects.GetCalls == 1,
+            "creator can read an owned project");
+
+        string manifest = "{\"schemaVersion\":1,\"name\":\"My Game\",\"worlds\":[{\"worldID\":\"" +
+            projects.WorldID + "\",\"name\":\"World\",\"sizeX\":256,\"sizeY\":256,\"spawnPoints\":[],\"assetReferences\":[]}]," +
+            "\"settings\":{\"gameMode\":\"sandbox\",\"defaultWorldID\":\"" + projects.WorldID +
+            "\",\"visibility\":\"private\",\"maxPlayers\":16,\"tags\":[]}}";
+        FakeRequest save = Request("PUT", "/creator/projects/" + projectID + "/draft",
+            "{\"expected_current_revision\":0,\"manifest\":" + manifest + "}", owner);
+        FakeResponse saveResponse = new();
+        put.Handle("/creator/projects/" + projectID + "/draft", save.InputStream, save, saveResponse);
+        Assert(saveResponse.StatusCode == 200 && projects.SaveCalls == 1 && projects.LastOwner == owner,
+            "saving a draft delegates a validated manifest and expected revision to the project service");
+
+        FakeRequest revision = Request("GET", "/creator/projects/" + projectID + "/revisions/1", string.Empty, owner);
+        FakeResponse revisionResponse = new();
+        get.Handle("/creator/projects/" + projectID + "/revisions/1", revision.InputStream, revision, revisionResponse);
+        Assert(revisionResponse.StatusCode == 200 && projects.RevisionCalls == 1,
+            "immutable project revisions can be retrieved by their owner");
+
+        FakeRequest metadata = Request("PATCH", "/creator/projects/" + projectID,
+            "{\"expected_current_revision\":1,\"name\":\"Renamed\",\"description\":\"updated\"}", owner);
+        FakeResponse metadataResponse = new();
+        patch.Handle("/creator/projects/" + projectID, metadata.InputStream, metadata, metadataResponse);
+        Assert(metadataResponse.StatusCode == 200 && projects.MetadataCalls == 1,
+            "metadata updates require the current revision for optimistic concurrency");
+
+        FakeRequest archive = Request("POST", "/creator/projects/" + projectID + "/archive", string.Empty, owner);
+        FakeResponse archiveResponse = new();
+        post.Handle("/creator/projects/" + projectID + "/archive", archive.InputStream, archive, archiveResponse);
+        Assert(archiveResponse.StatusCode == 200 && projects.ArchiveCalls == 1,
+            "creator can archive an owned project");
+    }
+
+    private sealed class FakeProjectService : IGameProjectService
+    {
+        private readonly UUID _owner;
+        public UUID ProjectID { get; } = UUID.Random();
+        public UUID WorldID { get; } = UUID.Random();
+        public UUID LastOwner { get; private set; }
+        public int CreateCalls { get; private set; }
+        public int ListCalls { get; private set; }
+        public int GetCalls { get; private set; }
+        public int SaveCalls { get; private set; }
+        public int RevisionCalls { get; private set; }
+        public int MetadataCalls { get; private set; }
+        public int ArchiveCalls { get; private set; }
+        public FakeProjectService(UUID owner) { _owner = owner; }
+        private GameProject Project => new() { ProjectID = ProjectID, OwnerID = _owner, Name = "My Game", CurrentRevision = 1 };
+        public GameProjectResult CreateProject(UUID owner, string name, string description)
+        {
+            CreateCalls++; LastOwner = owner;
+            return new GameProjectResult { Error = GameProjectError.None, Project = Project };
+        }
+        public GameProjectResult GetProject(UUID owner, UUID id)
+        {
+            GetCalls++; LastOwner = owner;
+            return owner == _owner && id == ProjectID
+                ? new GameProjectResult { Error = GameProjectError.None, Project = Project }
+                : new GameProjectResult { Error = GameProjectError.NotFound };
+        }
+        public List<GameProject> GetOwnedProjects(UUID owner, int offset, int limit)
+        {
+            ListCalls++; LastOwner = owner;
+            return owner == _owner ? new List<GameProject> { Project } : new List<GameProject>();
+        }
+        public GameProjectResult SaveDraft(UUID owner, UUID id, long expected, GameProjectManifest manifest)
+        {
+            SaveCalls++; LastOwner = owner;
+            return new GameProjectResult { Error = GameProjectError.None, Project = Project };
+        }
+        public GameProjectRevision GetRevision(UUID owner, UUID id, long revision)
+        {
+            RevisionCalls++; LastOwner = owner;
+            return owner == _owner && id == ProjectID && revision == 1
+                ? new GameProjectRevision { ProjectID = id, Revision = 1, CreatedBy = owner, ManifestJson = "{}" }
+                : null;
+        }
+        public GameProjectResult UpdateMetadata(UUID owner, UUID id, long expected, string name, string description)
+        {
+            MetadataCalls++; LastOwner = owner;
+            return new GameProjectResult { Error = GameProjectError.None, Project = Project };
+        }
+        public bool ArchiveProject(UUID owner, UUID id)
+        {
+            ArchiveCalls++; LastOwner = owner;
+            return owner == _owner && id == ProjectID;
+        }
     }
 
     private static void TestRateLimiter()
