@@ -15,6 +15,9 @@
     <Reference Include="Nini">
       <HintPath>../../../bin/Nini.dll</HintPath>
     </Reference>
+    <Reference Include="OpenSim.Framework">
+      <HintPath>../../../bin/OpenSim.Framework.dll</HintPath>
+    </Reference>
     <Reference Include="OpenSim.Framework.Servers.HttpServer">
       <HintPath>../../../bin/OpenSim.Framework.Servers.HttpServer.dll</HintPath>
     </Reference>
