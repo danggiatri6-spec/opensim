@@ -117,6 +117,13 @@ internal static class GameCreatorApiHandlerTests
             projects.WorldID + "\",\"name\":\"World\",\"sizeX\":256,\"sizeY\":256,\"spawnPoints\":[],\"assetReferences\":[]}]," +
             "\"settings\":{\"gameMode\":\"sandbox\",\"defaultWorldID\":\"" + projects.WorldID +
             "\",\"visibility\":\"private\",\"maxPlayers\":16,\"tags\":[]}}";
+        FakeRequest nestedSpoof = Request("PUT", "/creator/projects/" + projectID + "/draft",
+            "{\"expected_current_revision\":0,\"manifest\":{\"ownerId\":\"" + UUID.Random() + "\"}}", owner);
+        FakeResponse nestedSpoofResponse = new();
+        put.Handle("/creator/projects/" + projectID + "/draft", nestedSpoof.InputStream, nestedSpoof, nestedSpoofResponse);
+        Assert(nestedSpoofResponse.StatusCode == 400 && projects.SaveCalls == 0,
+            "nested manifest owner identity fields are rejected");
+
         FakeRequest save = Request("PUT", "/creator/projects/" + projectID + "/draft",
             "{\"expected_current_revision\":0,\"manifest\":" + manifest + "}", owner);
         FakeResponse saveResponse = new();
