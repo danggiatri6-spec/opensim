@@ -79,7 +79,21 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
         }
         catch
         {
-            _runtimeDisposable?.Dispose();
+            try
+            {
+                if (_getHandler is not null)
+                    server.RemoveStreamHandler("GET", "/creator/instances");
+                if (_postHandler is not null)
+                    server.RemoveStreamHandler("POST", "/creator/instances");
+            }
+            catch
+            {
+                // Preserve the original startup exception; the server may reject cleanup during startup.
+            }
+            finally
+            {
+                _runtimeDisposable?.Dispose();
+            }
             throw;
         }
     }
