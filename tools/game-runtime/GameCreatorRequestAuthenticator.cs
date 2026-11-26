@@ -47,6 +47,7 @@ public sealed class GameCreatorRequestAuthenticator
 
         string token = authorizationHeader.Substring(bearerPrefix.Length);
         if (string.IsNullOrWhiteSpace(token)
+            || token.Length > 4096
             || token.Any(char.IsWhiteSpace))
             return GameCreatorAuthenticationStatus.InvalidCredentials;
 
