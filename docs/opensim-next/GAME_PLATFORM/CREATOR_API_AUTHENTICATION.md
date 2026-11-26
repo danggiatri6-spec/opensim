@@ -178,7 +178,8 @@ The POST body rejects owner identity fields. The handler never accepts a client-
 - [x] Recorded the authenticated-principal and API boundary decision.
 - [x] Implement principal-bound request authenticator and positive/negative token tests (CI passed).
 - [x] Implement Creator Runtime HTTP handler routes and HTTPS/body/pagination safeguards.
-- [x] Add handler-level POST/GET/stop routing, HTTPS rejection, oversized-body, and owner-spoofing tests (CI passed).\n- [ ] Verify per-principal rate limiter tests and shared cross-route enforcement in CI.
+- [x] Add handler-level POST/GET/stop routing, HTTPS rejection, oversized-body, and owner-spoofing tests (CI passed).
+- [x] Add per-principal fixed-window rate limiting (120 requests/minute, 10,000 tracked-principal cap) and verify independent quota/reset behavior in CI.
 - [x] Implement opt-in Robust IServiceConnector and register GET/POST handlers.
 - [x] Add explicit Robust ServerMain disposal of loaded IDisposable service connectors; connector removes routes and disposes Game Runtime.
 - [ ] Add Robust-level acceptance test proving all live Game Instances and Worker processes are reaped during host shutdown.
