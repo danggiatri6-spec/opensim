@@ -189,6 +189,4 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
         return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
     }
 
-    private static byte[] Json(int status, object payload) =>
-        Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
 }
