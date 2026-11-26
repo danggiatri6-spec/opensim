@@ -10,6 +10,8 @@ static void Assert(bool value, string message)
     if (!value) throw new Exception("ASSERT FAILED: " + message);
 }
 
+GameCreatorRequestAuthenticatorTests.Run();
+
 UUID owner = UUID.Random();
 UUID foreign = UUID.Random();
 UUID projectId = UUID.Random();
