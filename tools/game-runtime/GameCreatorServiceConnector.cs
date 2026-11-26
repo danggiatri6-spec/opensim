@@ -44,8 +44,9 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
                     authenticationModule, new object[] { config });
 
             var authenticator = new GameCreatorRequestAuthenticator(authenticationService);
-            _getHandler = new GameCreatorApiHandler("GET", authenticator, _runtime);
-            _postHandler = new GameCreatorApiHandler("POST", authenticator, _runtime);
+            var rateLimiter = new GameCreatorRequestRateLimiter();
+            _getHandler = new GameCreatorApiHandler("GET", authenticator, _runtime, rateLimiter);
+            _postHandler = new GameCreatorApiHandler("POST", authenticator, _runtime, rateLimiter);
             server.AddStreamHandler(_getHandler);
             server.AddStreamHandler(_postHandler);
 
