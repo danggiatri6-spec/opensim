@@ -16,15 +16,18 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
     private const int MaximumBodyBytes = 16 * 1024;
     private readonly GameCreatorRequestAuthenticator _authenticator;
     private readonly IGameRuntimeService _runtime;
+    private readonly GameCreatorRequestRateLimiter _rateLimiter;
 
     public GameCreatorApiHandler(
         string httpMethod,
         GameCreatorRequestAuthenticator authenticator,
-        IGameRuntimeService runtime)
+        IGameRuntimeService runtime,
+        GameCreatorRequestRateLimiter? rateLimiter = null)
         : base(httpMethod, "/creator/instances")
     {
         _authenticator = authenticator ?? throw new ArgumentNullException(nameof(authenticator));
         _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        _rateLimiter = rateLimiter ?? new GameCreatorRequestRateLimiter();
     }
 
     public override string ContentType => "application/json";
@@ -37,6 +40,12 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
 
         if (!TryAuthenticate(httpRequest, httpResponse, out UUID ownerID))
             return JsonResponse(httpResponse, (HttpStatusCode)httpResponse.StatusCode, new { error = "unauthorized" });
+
+        if (!_rateLimiter.TryAcquire(ownerID))
+        {
+            httpResponse.AddHeader("Retry-After", "60");
+            return JsonResponse(httpResponse, HttpStatusCode.TooManyRequests, new { error = "rate_limited" });
+        }
 
         string[] segments = httpRequest.UriPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length < 2 || segments[0] != "creator" || segments[1] != "instances")
