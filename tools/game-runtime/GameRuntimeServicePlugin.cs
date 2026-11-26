@@ -13,6 +13,7 @@ namespace OpenSim.GameRuntime;
 public sealed class GameRuntimeServicePlugin : IGameRuntimeService, IAsyncDisposable, IDisposable
 {
     private readonly GameRuntimeService? _runtime;
+    public IGameProjectService? ProjectService { get; }
 
     public GameRuntimeServicePlugin(IConfigSource config)
     {
@@ -38,8 +39,8 @@ public sealed class GameRuntimeServicePlugin : IGameRuntimeService, IAsyncDispos
             MaximumActiveInstances = section.GetInt("MaximumActiveInstances", 16)
         };
 
-        var projectService = new GameProjectService(config);
-        _runtime = new GameRuntimeService(projectService, new GamePhysicsWorkerFactory(options), options);
+        ProjectService = new GameProjectService(config);
+        _runtime = new GameRuntimeService(ProjectService, new GamePhysicsWorkerFactory(options), options);
     }
 
     public Task<GameInstanceResult> StartInstanceAsync(UUID authenticatedOwnerID, UUID projectID, long revision, CancellationToken cancellationToken = default)
