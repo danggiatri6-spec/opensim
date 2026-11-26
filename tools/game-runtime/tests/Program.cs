@@ -11,6 +11,7 @@ static void Assert(bool value, string message)
 }
 
 GameCreatorRequestAuthenticatorTests.Run();
+GameCreatorApiHandlerTests.Run();
 
 UUID owner = UUID.Random();
 UUID foreign = UUID.Random();
