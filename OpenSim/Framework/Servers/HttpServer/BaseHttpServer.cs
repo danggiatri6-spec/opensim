@@ -2044,7 +2044,14 @@ namespace OpenSim.Framework.Servers.HttpServer
         {
             HTTPDRunning = false;
 
-            StatsManager.DeregisterStat(m_requestsProcessedStat);
+            // Stop may be called after a partial startup or more than once during
+            // host shutdown. In those cases Start() may never have registered
+            // this statistic, or a previous Stop() may already have disposed it.
+            if (m_requestsProcessedStat is not null)
+            {
+                StatsManager.DeregisterStat(m_requestsProcessedStat);
+                m_requestsProcessedStat = null;
+            }
 
             try
             {
