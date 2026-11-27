@@ -20,6 +20,7 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
     private readonly IGameProjectService _projects;
     private readonly GameCreatorRequestRateLimiter _rateLimiter;
     private readonly JsonSerializerOptions _jsonOptions = CreateJsonOptions();
+    private static readonly JsonSerializerOptions ResponseJsonOptions = CreateJsonOptions();
 
     public GameCreatorProjectsApiHandler(string method, GameCreatorRequestAuthenticator authenticator,
         IGameProjectService projects, GameCreatorRequestRateLimiter? rateLimiter = null)
@@ -268,7 +269,7 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
         response.ContentType = "application/json; charset=utf-8";
         response.AddHeader("Cache-Control", "no-store");
         response.AddHeader("X-Content-Type-Options", "nosniff");
-        return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+        return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, ResponseJsonOptions));
     }
 
     private static JsonSerializerOptions CreateJsonOptions()
