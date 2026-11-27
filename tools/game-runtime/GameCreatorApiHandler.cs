@@ -108,7 +108,14 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
                 || revision < 1)
                 return JsonResponse(response, HttpStatusCode.BadRequest, new { error = "invalid_request" });
 
-            GameInstanceResult result = _runtime.StartInstanceAsync(ownerID, projectID, revision)
+            UUID experienceID = UUID.Zero;
+            if (root.TryGetProperty("experience_id", out JsonElement experienceValue)
+                && (experienceValue.ValueKind != JsonValueKind.String
+                    || !UUID.TryParse(experienceValue.GetString(), out experienceID)
+                    || experienceID == UUID.Zero))
+                return JsonResponse(response, HttpStatusCode.BadRequest, new { error = "invalid_request" });
+
+            GameInstanceResult result = _runtime.StartInstanceAsync(ownerID, projectID, revision, experienceID)
                 .GetAwaiter().GetResult();
             return WriteResult(response, result, HttpStatusCode.Created);
         }
