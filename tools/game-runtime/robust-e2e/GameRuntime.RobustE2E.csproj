@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="OpenMetaverseTypes"><HintPath>../../../bin/OpenMetaverseTypes.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Services.Interfaces"><HintPath>../../../bin/OpenSim.Services.Interfaces.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Framework"><HintPath>../../../bin/OpenSim.Framework.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Framework.Servers.HttpServer"><HintPath>../../../bin/OpenSim.Framework.Servers.HttpServer.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Server.Base"><HintPath>../../../bin/OpenSim.Server.Base.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Data"><HintPath>../../../bin/OpenSim.Data.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Services.Base"><HintPath>../../../bin/OpenSim.Services.Base.dll</HintPath></Reference>
+    <Reference Include="Nini"><HintPath>../../../bin/Nini.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Services.AuthenticationService"><HintPath>../../../bin/OpenSim.Services.AuthenticationService.dll</HintPath></Reference>
+    <Reference Include="OpenSim.Data.SQLite"><HintPath>../../../bin/OpenSim.Data.SQLite.dll</HintPath></Reference>
+    <ProjectReference Include="../GameRuntime.csproj" />
+  </ItemGroup>
+</Project>
