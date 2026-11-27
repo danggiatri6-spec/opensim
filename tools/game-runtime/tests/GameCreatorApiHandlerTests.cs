@@ -144,6 +144,20 @@ internal static class GameCreatorApiHandlerTests
         Assert(metadataResponse.StatusCode == 200 && projects.MetadataCalls == 1,
             "metadata updates require the current revision for optimistic concurrency");
 
+        FakeRequest publish = Request("POST", "/creator/projects/" + projectID + "/publish",
+            "{\"expected_current_revision\":1}", owner);
+        FakeResponse publishResponse = new();
+        post.Handle("/creator/projects/" + projectID + "/publish", publish.InputStream, publish, publishResponse);
+        Assert(publishResponse.StatusCode == 200 && projects.PublishCalls == 1,
+            "creator can publish using an explicit expected current revision");
+
+        FakeRequest publishSpoof = Request("POST", "/creator/projects/" + projectID + "/publish",
+            "{\"expected_current_revision\":1,\"owner_id\":\"" + UUID.Random() + "\"}", owner);
+        FakeResponse publishSpoofResponse = new();
+        post.Handle("/creator/projects/" + projectID + "/publish", publishSpoof.InputStream, publishSpoof, publishSpoofResponse);
+        Assert(publishSpoofResponse.StatusCode == 400 && projects.PublishCalls == 1,
+            "publish rejects client-supplied owner identity");
+
         FakeRequest archive = Request("POST", "/creator/projects/" + projectID + "/archive", string.Empty, owner);
         FakeResponse archiveResponse = new();
         post.Handle("/creator/projects/" + projectID + "/archive", archive.InputStream, archive, archiveResponse);
@@ -164,6 +178,7 @@ internal static class GameCreatorApiHandlerTests
         public int RevisionCalls { get; private set; }
         public int MetadataCalls { get; private set; }
         public int ArchiveCalls { get; private set; }
+        public int PublishCalls { get; private set; }
         public FakeProjectService(UUID owner) { _owner = owner; }
         private GameProject Project => new() { ProjectID = ProjectID, OwnerID = _owner, Name = "My Game", CurrentRevision = 1 };
         public GameProjectResult CreateProject(UUID owner, string name, string description)
@@ -199,6 +214,13 @@ internal static class GameCreatorApiHandlerTests
         {
             MetadataCalls++; LastOwner = owner;
             return new GameProjectResult { Error = GameProjectError.None, Project = Project };
+        }
+        public GameProjectResult PublishProject(UUID owner, UUID id, long expected)
+        {
+            PublishCalls++; LastOwner = owner;
+            return owner == _owner && id == ProjectID && expected == 1
+                ? new GameProjectResult { Error = GameProjectError.None, Project = Project }
+                : new GameProjectResult { Error = GameProjectError.NotFound };
         }
         public bool ArchiveProject(UUID owner, UUID id)
         {
