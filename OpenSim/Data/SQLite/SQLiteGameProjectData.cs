@@ -294,7 +294,15 @@ WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID
   AND UpdatedUTC = @ExpectedUpdatedUTC
   AND EXISTS (SELECT 1 FROM GameProjectRevisions
               WHERE GameProjectRevisions.ProjectID = GameProjects.ProjectID
-                AND GameProjectRevisions.Revision = GameProjects.CurrentRevision)";
+                AND GameProjectRevisions.Revision = GameProjects.CurrentRevision)
+  AND (
+      (SELECT SchemaVersion FROM GameProjectRevisions
+       WHERE GameProjectRevisions.ProjectID = GameProjects.ProjectID
+         AND GameProjectRevisions.Revision = GameProjects.CurrentRevision) < 2
+      OR EXISTS (SELECT 1 FROM GameProjectRevisionExperiences
+                 WHERE GameProjectRevisionExperiences.ProjectID = GameProjects.ProjectID
+                   AND GameProjectRevisionExperiences.ProjectRevision = GameProjects.CurrentRevision)
+  )";
                 command.Parameters.AddWithValue("@UpdatedUTC", FormatDate(updatedUTC));
                 command.Parameters.AddWithValue("@ProjectID", projectID.ToString());
                 command.Parameters.AddWithValue("@OwnerID", ownerID.ToString());
