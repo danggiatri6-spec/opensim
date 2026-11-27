@@ -121,27 +121,41 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
             || storedRevision.Revision != revision || storedRevision.CreatedBy != authenticatedOwnerID)
             return Failure(GameInstanceError.InvalidRevision, "The requested immutable project revision was not found.");
 
-        GameProjectManifest manifest;
-        try
+        GameWorldDefinition? world;
+        if (storedRevision.SchemaVersion == 2)
         {
-            if (string.IsNullOrWhiteSpace(storedRevision.ManifestJson)
-                || storedRevision.ManifestJson.Length > GameProjectManifestValidator.MaximumManifestCharacters)
-                return Failure(GameInstanceError.InvalidManifest, "Stored project manifest is empty or exceeds its size limit.");
-            manifest = JsonSerializer.Deserialize<GameProjectManifest>(storedRevision.ManifestJson, JsonOptions)
-                ?? throw new JsonException("Manifest was null.");
+            if (_projects is not IGameProjectRuntimeDefinitionService resolver)
+                return Failure(GameInstanceError.InvalidManifest, "The v2 runtime definition resolver is unavailable.");
+            world = resolver.ResolveRuntimeWorld(authenticatedOwnerID, projectID, revision);
+            if (world is null)
+                return Failure(GameInstanceError.InvalidManifest,
+                    "The immutable v2 Experience/Place graph could not be resolved for runtime.");
         }
-        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        else
         {
-            return Failure(GameInstanceError.InvalidManifest, "Stored project manifest could not be parsed.");
+            GameProjectManifest manifest;
+            try
+            {
+                if (storedRevision.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion
+                    || string.IsNullOrWhiteSpace(storedRevision.ManifestJson)
+                    || storedRevision.ManifestJson.Length > GameProjectManifestValidator.MaximumManifestCharacters)
+                    return Failure(GameInstanceError.InvalidManifest, "Stored project manifest is empty, oversized or unsupported.");
+                manifest = JsonSerializer.Deserialize<GameProjectManifest>(storedRevision.ManifestJson, JsonOptions)
+                    ?? throw new JsonException("Manifest was null.");
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                return Failure(GameInstanceError.InvalidManifest, "Stored project manifest could not be parsed.");
+            }
+
+            GameProjectValidationResult validation = GameProjectManifestValidator.Validate(manifest);
+            if (!validation.IsValid)
+                return Failure(GameInstanceError.InvalidManifest, "Stored project manifest failed runtime validation.");
+
+            world = manifest.Worlds.SingleOrDefault(x => x.WorldID == manifest.Settings.DefaultWorldID);
+            if (world is null)
+                return Failure(GameInstanceError.InvalidManifest, "Default world did not resolve uniquely.");
         }
-
-        GameProjectValidationResult validation = GameProjectManifestValidator.Validate(manifest);
-        if (!validation.IsValid)
-            return Failure(GameInstanceError.InvalidManifest, "Stored project manifest failed runtime validation.");
-
-        GameWorldDefinition? world = manifest.Worlds.SingleOrDefault(x => x.WorldID == manifest.Settings.DefaultWorldID);
-        if (world is null)
-            return Failure(GameInstanceError.InvalidManifest, "Default world did not resolve uniquely.");
 
         string reservationKey = authenticatedOwnerID + ":" + projectID + ":" + revision;
         var record = new InstanceRecord(new GameInstance
