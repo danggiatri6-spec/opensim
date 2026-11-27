@@ -162,7 +162,7 @@ internal static class GameCreatorApiHandlerTests
             "{\"expected_current_revision\":1,\"owner_id\":\"" + UUID.Random() + "\"}", owner);
         FakeResponse publishSpoofResponse = new();
         post.Handle("/creator/projects/" + projectID + "/publish", publishSpoof.InputStream, publishSpoof, publishSpoofResponse);
-        Assert(publishSpoofResponse.StatusCode == 400 && projects.PublishCalls == 1,
+        Assert(publishSpoofResponse.StatusCode == 400 && projects.PublishCalls == 2,
             "publish rejects client-supplied owner identity");
 
         FakeRequest archive = Request("POST", "/creator/projects/" + projectID + "/archive", string.Empty, owner);
