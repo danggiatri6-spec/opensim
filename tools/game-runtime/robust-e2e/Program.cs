@@ -88,7 +88,8 @@ try
     Assert(create.StatusCode == HttpStatusCode.Created, "live HTTPS Creator create route returns 201; got " + (int)create.StatusCode + " " + createBody);
 
     using JsonDocument created = JsonDocument.Parse(createBody);
-    string projectIdText = created.RootElement.GetProperty("project").GetProperty("projectID").GetString()!;
+    JsonElement project = created.RootElement.GetProperty("project");
+    string projectIdText = project.EnumerateObject().First(p => p.Name.Equals("ProjectID", StringComparison.OrdinalIgnoreCase)).Value.GetString()!;
     Assert(UUID.TryParse(projectIdText, out UUID projectId) && projectId != UUID.Zero,
         "live Creator response returns a generated project UUID");
 
