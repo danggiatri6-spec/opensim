@@ -17,6 +17,7 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
     private readonly GameCreatorRequestAuthenticator _authenticator;
     private readonly IGameRuntimeService _runtime;
     private readonly GameCreatorRequestRateLimiter _rateLimiter;
+    private static readonly JsonSerializerOptions ResponseJsonOptions = CreateJsonOptions();
 
     public GameCreatorApiHandler(
         string httpMethod,
@@ -200,13 +201,35 @@ public sealed class GameCreatorApiHandler : BaseStreamHandler
         return JsonResponse(response, status, new { error = result.Error.ToString() });
     }
 
+    private static JsonSerializerOptions CreateJsonOptions()
+    {
+        var options = new JsonSerializerOptions();
+        options.Converters.Add(new OpenMetaverseUuidConverter());
+        return options;
+    }
+
+    private sealed class OpenMetaverseUuidConverter : System.Text.Json.Serialization.JsonConverter<UUID>
+    {
+        public override UUID Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            if (reader.TokenType != System.Text.Json.JsonTokenType.String
+                || !UUID.TryParse(reader.GetString(), out UUID id))
+                throw new JsonException("UUID must be a valid string.");
+            return id;
+        }
+
+        public override void Write(System.Text.Json.Utf8JsonWriter writer, UUID value,
+            JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
+    }
+
     private static byte[] JsonResponse(IOSHttpResponse response, HttpStatusCode status, object payload)
     {
         response.StatusCode = (int)status;
         response.ContentType = "application/json; charset=utf-8";
         response.AddHeader("Cache-Control", "no-store");
         response.AddHeader("X-Content-Type-Options", "nosniff");
-        return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+        return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload, ResponseJsonOptions));
     }
 
 }
