@@ -356,6 +356,12 @@ try
     Assert(!(bool)Call(projectV2Service, "SaveDraftRevision", owner, serviceProjectId, 0L,
         @"{""schemaVersion"":2}", projectExperiencePins)!,
         "GameProjectV2Service rejects a stale project revision compare-and-swap");
+    var publishV2Result = Call(projectService, "PublishProject", owner, serviceProjectId, 1L)!;
+    Assert((bool)Get(publishV2Result, "Success")!,
+        "GameProjectService validates the immutable Experience/Place graph before publishing a v2 project");
+    Assert((int)Get(Call(provider, "GetProject", serviceProjectId)!, "Status")! == 1,
+        "a validated v2 project publication is persisted");
+
 
     var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
     Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest; error=" + Get(publishResult, "Error") + "; message=" + Get(publishResult, "Message"));
