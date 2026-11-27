@@ -135,6 +135,20 @@ portProbe.Start();
 int port = ((IPEndPoint)portProbe.LocalEndpoint).Port;
 portProbe.Stop();
 
+// Exercise the same config-driven service composition used by the HTTP connector
+// before opening the socket. This distinguishes provider loading/configuration
+// failures from HTTP routing or request authentication failures.
+using (var storagePluginProbe = new GameRuntimeServicePlugin(config))
+{
+    Assert(storagePluginProbe.ProjectService is not null,
+        "config-driven Game Runtime plugin initializes the Game Project service");
+    GameProjectResult storageServiceProbe = storagePluginProbe.ProjectService!.CreateProject(
+        principal, "Config-loaded storage probe", "Validates plugin-loaded SQLite provider.");
+    Assert(storageServiceProbe.Success,
+        "config-loaded Game Project service can create a project; error=" +
+        storageServiceProbe.Error + "; message=" + storageServiceProbe.Message);
+}
+
 // BaseHttpServer starts OpenSim's polling infrastructure, whose WorkManager
 // registers console commands during static initialization. The standalone
 // integration host has no interactive console, so install OpenSim's test console.
