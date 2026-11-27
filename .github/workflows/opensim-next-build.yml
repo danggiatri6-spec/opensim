@@ -90,6 +90,9 @@ jobs:
           echo "Found SQLite native runtime: $native_sqlite"
           echo "LD_LIBRARY_PATH=$native_dir:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
+      - name: Run live Robust Creator HTTPS integration tests
+        run: dotnet run --configuration Release --project tools/game-runtime/robust-e2e/GameRuntime.RobustE2E.csproj
+
       - name: Run AI Friend SQLite integration tests
         run: dotnet run --no-build --configuration Release --project tools/ai-friend-sqlite-test-runner/AiFriendSqliteTestRunner.csproj
 
