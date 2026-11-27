@@ -8,6 +8,7 @@ using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Data;
 using OpenSim.Framework.Servers.HttpServer;
+using OpenSim.Framework;
 using OpenSim.Framework.Console;
 using OpenSim.GameRuntime;
 using OpenSim.Server.Base;
