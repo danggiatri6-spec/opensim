@@ -54,6 +54,19 @@ public sealed class GameRuntimeServicePlugin : IGameRuntimeService, IAsyncDispos
         });
     }
 
+    public Task<GameInstanceResult> StartInstanceAsync(
+        UUID authenticatedOwnerID, UUID projectID, long revision, UUID experienceID,
+        CancellationToken cancellationToken = default)
+    {
+        if (_runtime is not null)
+            return _runtime.StartInstanceAsync(authenticatedOwnerID, projectID, revision, experienceID, cancellationToken);
+        return Task.FromResult(new GameInstanceResult
+        {
+            Error = GameInstanceError.WorkerUnavailable,
+            Message = "Game Runtime is disabled."
+        });
+    }
+
     public Task<GameInstanceResult> StopInstanceAsync(UUID authenticatedOwnerID, UUID instanceID, CancellationToken cancellationToken = default)
     {
         if (_runtime is not null)
