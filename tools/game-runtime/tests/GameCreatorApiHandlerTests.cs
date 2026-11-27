@@ -204,19 +204,6 @@ internal static class GameCreatorApiHandlerTests
             "creator can archive an owned project");
     }
 
-    public class EmptyGameProjectDataProxy : DispatchProxy
-    {
-        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
-        {
-            if (targetMethod is null) return null;
-            if (targetMethod.ReturnType == typeof(bool)) return false;
-            if (targetMethod.ReturnType == typeof(List<GameExperienceData>)) return new List<GameExperienceData>();
-            if (targetMethod.ReturnType == typeof(List<GamePlaceData>)) return new List<GamePlaceData>();
-            if (targetMethod.ReturnType == typeof(List<GameProjectData>)) return new List<GameProjectData>();
-            return null;
-        }
-    }
-
     private sealed class FakeProjectService : IGameProjectService
     {
         private readonly UUID _owner;
@@ -418,5 +405,18 @@ internal static class GameCreatorApiHandlerTests
         public double RequestTS => 0;
         public void Redirect(string url, HttpStatusCode redirStatusCode = HttpStatusCode.Redirect) { }
         public void AddHeader(string key, string value) => _headers.Add(key, value);
+    }
+}
+
+public class EmptyGameProjectDataProxy : DispatchProxy
+{
+    protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+    {
+        if (targetMethod is null) return null;
+        if (targetMethod.ReturnType == typeof(bool)) return false;
+        if (targetMethod.ReturnType == typeof(List<GameExperienceData>)) return new List<GameExperienceData>();
+        if (targetMethod.ReturnType == typeof(List<GamePlaceData>)) return new List<GamePlaceData>();
+        if (targetMethod.ReturnType == typeof(List<GameProjectData>)) return new List<GameProjectData>();
+        return null;
     }
 }
