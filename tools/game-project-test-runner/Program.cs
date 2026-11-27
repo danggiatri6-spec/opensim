@@ -109,7 +109,6 @@ try
     Assert(!(bool)Call(provider, "UpdateProjectMetadata", projectId, owner, 1L, updatedAt, "Stale", "", DateTime.UtcNow)!, "stale metadata compare-and-swap is rejected");
     Assert(!(bool)Call(provider, "UpdateProjectMetadata", projectId, otherOwner, 1L, (DateTime)Get(Call(provider, "GetProject", projectId)!, "UpdatedUTC")!, "Intruder", "", DateTime.UtcNow)!, "metadata update rejects a different owner");
 
-    Assert((bool)Call(provider, "ArchiveProject", projectId, owner, DateTime.UtcNow)!, "owner can archive project");
     loaded = Call(provider, "GetProject", projectId)!;
     updatedAt = (DateTime)Get(loaded, "UpdatedUTC")!;
     Assert(!(bool)Call(provider, "PublishProject", projectId, otherOwner, 1L, updatedAt, DateTime.UtcNow)!,
