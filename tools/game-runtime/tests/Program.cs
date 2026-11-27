@@ -40,6 +40,27 @@ var options = new GameRuntimeOptions
     WorkerAssemblyPath = "worker.dll",
     MaximumActiveInstances = 4
 };
+var v2Projects = new FakeProjectService(owner, projectId, worldId);
+v2Projects.Revision.SchemaVersion = 2;
+v2Projects.RuntimeWorld = new GameWorldDefinition
+{
+    WorldID = worldId,
+    Name = "Pinned v2 World",
+    SizeX = 256,
+    SizeY = 256
+};
+var v2Workers = new FakeWorkerFactory();
+await using (var v2Runtime = new GameRuntimeService(v2Projects, v2Workers, options))
+{
+    GameInstanceResult v2Started = await v2Runtime.StartInstanceAsync(owner, projectId, 1);
+    Assert(v2Started.Success && v2Projects.LastResolvedRevision == 1,
+        "v2 Game Instance resolves the exact requested immutable project revision");
+    Assert(v2Workers.Sessions.Count == 1
+        && v2Workers.Sessions[0].LastConfiguration.GetProperty("worldName").GetString() == "Pinned v2 World",
+        "v2 runtime resolver supplies the Place world definition to the Worker");
+    await v2Runtime.StopInstanceAsync(owner, v2Started.Instance!.InstanceID);
+}
+
 await using var runtime = new GameRuntimeService(projects, workers, options);
 
 GameInstanceResult started = await runtime.StartInstanceAsync(owner, projectId, 1);
@@ -138,12 +159,20 @@ await using (var realRuntime = new GameRuntimeService(projects, new GamePhysicsW
 
 Console.WriteLine("PASS: Game Runtime ownership, immutable revision validation, default world, duplicate reservation, stop/restart, fault propagation, and startup rollback.");
 
-sealed class FakeProjectService : IGameProjectService
+sealed class FakeProjectService : IGameProjectService, IGameProjectRuntimeDefinitionService
 {
     public GameProject Project { get; }
     public GameProjectRevision Revision { get; }
     public GameProject? SecondProject { get; private set; }
     public GameProjectRevision? SecondRevision { get; private set; }
+    public GameWorldDefinition? RuntimeWorld { get; set; }
+    public long LastResolvedRevision { get; private set; }
+    public GameWorldDefinition? ResolveRuntimeWorld(UUID owner, UUID project, long revision)
+    {
+        LastResolvedRevision = revision;
+        return owner == Project.OwnerID && project == Project.ProjectID
+            && revision == Revision.Revision && Revision.SchemaVersion == 2 ? RuntimeWorld : null;
+    }
     public FakeProjectService(UUID owner, UUID project, UUID world)
     {
         Project = new GameProject { ProjectID = project, OwnerID = owner, Name = "Test Game", Status = GameProjectStatus.Published, CurrentRevision = 1 };
