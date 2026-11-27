@@ -151,6 +151,13 @@ internal static class GameCreatorApiHandlerTests
         Assert(publishResponse.StatusCode == 200 && projects.PublishCalls == 1,
             "creator can publish using an explicit expected current revision");
 
+        FakeRequest stalePublish = Request("POST", "/creator/projects/" + projectID + "/publish",
+            "{\"expected_current_revision\":2}", owner);
+        FakeResponse stalePublishResponse = new();
+        post.Handle("/creator/projects/" + projectID + "/publish", stalePublish.InputStream, stalePublish, stalePublishResponse);
+        Assert(stalePublishResponse.StatusCode == 409,
+            "publish maps a revision conflict to HTTP 409");
+
         FakeRequest publishSpoof = Request("POST", "/creator/projects/" + projectID + "/publish",
             "{\"expected_current_revision\":1,\"owner_id\":\"" + UUID.Random() + "\"}", owner);
         FakeResponse publishSpoofResponse = new();
@@ -218,9 +225,11 @@ internal static class GameCreatorApiHandlerTests
         public GameProjectResult PublishProject(UUID owner, UUID id, long expected)
         {
             PublishCalls++; LastOwner = owner;
-            return owner == _owner && id == ProjectID && expected == 1
+            if (owner != _owner || id != ProjectID)
+                return new GameProjectResult { Error = GameProjectError.NotFound };
+            return expected == 1
                 ? new GameProjectResult { Error = GameProjectError.None, Project = Project }
-                : new GameProjectResult { Error = GameProjectError.NotFound };
+                : new GameProjectResult { Error = GameProjectError.RevisionConflict };
         }
         public bool ArchiveProject(UUID owner, UUID id)
         {
