@@ -7,6 +7,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Reflection;
+using log4net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Nini.Config;
@@ -19,6 +21,7 @@ namespace OpenSim.Services.UserAccountService
 {
     public sealed class GameProjectService : ServiceBase, IGameProjectService
     {
+        private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private const int MaximumPageSize = 100;
         private readonly IGameProjectData m_Database;
 
@@ -85,12 +88,20 @@ namespace OpenSim.Services.UserAccountService
             try
             {
                 if (!m_Database.CreateProject(data))
+                {
+                    m_log.ErrorFormat(
+                        "[GAME PROJECT]: Storage provider {0} rejected project insert for {1}.",
+                        m_Database.GetType().FullName, data.ProjectID);
                     return Failure(GameProjectError.StorageUnavailable, "The project could not be created.");
+                }
 
                 return Success(ToProject(data));
             }
-            catch
+            catch (Exception exception)
             {
+                m_log.ErrorFormat(
+                    "[GAME PROJECT]: Storage provider {0} failed to create project {1}.",
+                    m_Database.GetType().FullName, data.ProjectID, exception);
                 return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
             }
         }
