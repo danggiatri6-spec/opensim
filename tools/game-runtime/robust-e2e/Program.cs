@@ -127,6 +127,28 @@ try
     Assert(list.StatusCode == HttpStatusCode.OK && listBody.Contains(projectIdText, StringComparison.OrdinalIgnoreCase),
         "live HTTPS list route reads the project back from the configured SQLite provider");
 
+    string worldId = UUID.Random().ToString();
+    string manifest = "{\"schemaVersion\":1,\"name\":\"Robust live E2E\",\"worlds\":[{\"worldID\":\"" + worldId +
+        "\",\"name\":\"Main World\",\"sizeX\":256,\"sizeY\":256,\"spawnPoints\":[],\"assetReferences\":[]}]," +
+        "\"settings\":{\"gameMode\":\"sandbox\",\"defaultWorldID\":\"" + worldId +
+        "\",\"visibility\":\"private\",\"maxPlayers\":16,\"tags\":[]}}";
+    using HttpResponseMessage saveDraft = await client.PutAsync("/creator/projects/" + projectIdText + "/draft",
+        new StringContent("{\"expected_current_revision\":0,\"manifest\":" + manifest + "}", System.Text.Encoding.UTF8, "application/json"));
+    string saveBody = await saveDraft.Content.ReadAsStringAsync();
+    Assert(saveDraft.StatusCode == HttpStatusCode.OK,
+        "live HTTPS draft save persists a validated manifest; got " + (int)saveDraft.StatusCode + " " + saveBody);
+
+    using HttpResponseMessage publish = await client.PostAsync("/creator/projects/" + projectIdText + "/publish",
+        new StringContent("{\"expected_current_revision\":1}", System.Text.Encoding.UTF8, "application/json"));
+    string publishBody = await publish.Content.ReadAsStringAsync();
+    Assert(publish.StatusCode == HttpStatusCode.OK,
+        "live HTTPS publish validates and atomically publishes revision 1; got " + (int)publish.StatusCode + " " + publishBody);
+
+    using HttpResponseMessage publishAgain = await client.PostAsync("/creator/projects/" + projectIdText + "/publish",
+        new StringContent("{\"expected_current_revision\":1}", System.Text.Encoding.UTF8, "application/json"));
+    Assert(publishAgain.StatusCode == HttpStatusCode.Conflict,
+        "live HTTPS rejects repeated publication after the project leaves Draft");
+
     using var foreignClient = new HttpClient(handler) { BaseAddress = client.BaseAddress };
     foreignClient.DefaultRequestHeaders.Add("X-OpenSim-Principal", UUID.Random().ToString());
     foreignClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
@@ -134,7 +156,7 @@ try
     Assert(foreign.StatusCode == HttpStatusCode.Unauthorized,
         "principal-bound token cannot be replayed under another creator UUID");
 
-    Console.WriteLine("PASS: live BaseHttpServer HTTPS + production WebkeyAuthenticationService + SQLite Creator API create/list/owner isolation");
+    Console.WriteLine("PASS: live BaseHttpServer HTTPS + production WebkeyAuthenticationService + SQLite Creator API create/list/draft-save/publish/owner isolation");
 }
 finally
 {
