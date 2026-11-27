@@ -269,6 +269,15 @@ try
     Set(missingGraphRevision, "CreatedBy", owner); Set(missingGraphRevision, "CreatedUTC", DateTime.UtcNow);
     Assert(!(bool)Call(provider, "SaveRevision", missingGraphRevision, owner, 0L, DateTime.UtcNow)!,
         "v2 project revision without Experience pins is rejected");
+    var foreignExperienceRef = Activator.CreateInstance(projectExperienceType)!;
+    Set(foreignExperienceRef, "ExperienceID", graphExperienceId);
+    Set(foreignExperienceRef, "ExperienceRevision", 1L); Set(foreignExperienceRef, "SortOrder", 0);
+    ((IList)Get(missingGraphRevision, "Experiences")!).Add(foreignExperienceRef);
+    Assert(!(bool)Call(provider, "SaveRevision", missingGraphRevision, owner, 0L, DateTime.UtcNow)!,
+        "v2 project revision cannot pin an Experience owned by another project");
+    Assert(Equals(Get(Call(provider, "GetProject", missingGraphProjectId)!, "CurrentRevision"), 0L)
+        && Call(provider, "GetRevision", missingGraphProjectId, 1L) == null,
+        "failed Experience pin rolls back the entire project revision transaction");
 
     var servicesAssembly = Load("OpenSim.Services.UserAccountService");
     var projectServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameProjectService", true)!;
