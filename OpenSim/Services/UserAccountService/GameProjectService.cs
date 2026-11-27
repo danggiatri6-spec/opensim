@@ -394,7 +394,7 @@ namespace OpenSim.Services.UserAccountService
             {
                 GameProjectData project = m_Database.GetProject(projectID);
                 if (project == null || project.OwnerID != authenticatedOwnerID
-                    || project.Status != (int)GameProjectStatus.Published)
+                    || project.Status == (int)GameProjectStatus.Archived)
                     return null;
 
                 GameProjectRevisionData revision = m_Database.GetRevision(projectID, projectRevision);
@@ -428,7 +428,7 @@ namespace OpenSim.Services.UserAccountService
                     || placeRevision.DefinitionJson.Length > GameProjectManifestValidator.MaximumManifestCharacters)
                     return null;
 
-                JsonSerializerOptions options = new JsonSerializerOptions();
+                JsonSerializerOptions options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 options.Converters.Add(new OpenMetaverseUuidJsonConverter());
                 GameWorldDefinition world = JsonSerializer.Deserialize<GameWorldDefinition>(
                     placeRevision.DefinitionJson, options);
