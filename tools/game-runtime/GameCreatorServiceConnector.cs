@@ -81,7 +81,11 @@ public sealed class GameCreatorServiceConnector : IServiceConnector, IDisposable
                 foreach (string method in new[] { "GET", "POST", "PUT", "PATCH" })
                 {
                     var projectHandler = new GameCreatorProjectsApiHandler(
-                        method, authenticator, runtimePlugin.ProjectService, rateLimiter);
+                        method, authenticator, runtimePlugin.ProjectService, rateLimiter,
+                        runtimePlugin.ProjectService is OpenSim.Services.UserAccountService.GameProjectService concrete
+                            ? concrete.ExperienceService : null,
+                        runtimePlugin.ProjectService is OpenSim.Services.UserAccountService.GameProjectService concreteV2
+                            ? concreteV2.ProjectV2Service : null);
                     _projectHandlers.Add(projectHandler);
                     server.AddStreamHandler(projectHandler);
                 }
