@@ -338,7 +338,7 @@ try
     Set(projectExperiencePin, "SortOrder", 0);
     projectExperiencePins.Add(projectExperiencePin);
     Assert((bool)Call(projectV2Service, "SaveDraftRevision", owner, serviceProjectId, 0L,
-        "{\\"schemaVersion\\":2}", projectExperiencePins)!,
+        @"{""schemaVersion"":2}", projectExperiencePins)!,
         "GameProjectV2Service saves a v2 project revision with an exact Experience revision pin");
     var savedV2Project = Call(provider, "GetProject", serviceProjectId)!;
     Assert((long)Get(savedV2Project, "CurrentRevision")! == 1L
@@ -351,10 +351,10 @@ try
         && Equals(Get(savedV2Pins[0]!, "ExperienceRevision"), 1L),
         "SQLite reads back the exact immutable Experience pin from the v2 project revision");
     Assert(!(bool)Call(projectV2Service, "SaveDraftRevision", otherOwner, serviceProjectId, 1L,
-        "{\\"schemaVersion\\":2}", projectExperiencePins)!,
+        @"{""schemaVersion"":2}", projectExperiencePins)!,
         "GameProjectV2Service rejects a project revision write by a different owner");
     Assert(!(bool)Call(projectV2Service, "SaveDraftRevision", owner, serviceProjectId, 0L,
-        "{\\"schemaVersion\\":2}", projectExperiencePins)!,
+        @"{""schemaVersion"":2}", projectExperiencePins)!,
         "GameProjectV2Service rejects a stale project revision compare-and-swap");
 
     var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
