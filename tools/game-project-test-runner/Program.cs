@@ -64,6 +64,19 @@ Assert(places.Count == 1 && Equals(Get(places[0]!, "PlaceID"), worldId),
 Assert(((IList)Get(places[0]!, "Worlds")!).Count == 1,
     "legacy Place retains its declarative world definition");
 
+var stableExperienceMethod = adapterType.GetMethod("GetLegacyDefaultExperienceID")!;
+var stableProjectID = U("44444444-4444-4444-8444-444444444444");
+var stableExperienceID = stableExperienceMethod.Invoke(null, new[] { stableProjectID })!;
+var stableExperienceIDAgain = stableExperienceMethod.Invoke(null, new[] { stableProjectID })!;
+Assert(Equals(stableExperienceID, stableExperienceIDAgain),
+    "legacy default Experience identity is deterministic across retries");
+Assert(Equals(stableExperienceID, U("f4131522-9790-5b94-be00-2618a38af793")),
+    "legacy default Experience identity matches the documented SHA-256 UUID vector");
+var otherStableProjectID = U("55555555-5555-4555-8555-555555555555");
+var otherStableExperienceID = stableExperienceMethod.Invoke(null, new[] { otherStableProjectID })!;
+Assert(!Equals(stableExperienceID, otherStableExperienceID),
+    "different projects receive different deterministic default Experience identities");
+
 var experienceValidator = contracts.GetType("OpenSim.Services.Interfaces.GameExperienceValidator", true)!;
 var validExperience = experienceValidator.GetMethod("Validate")!.Invoke(null, new[] { experience })!;
 Assert((bool)Get(validExperience, "IsValid")!,
