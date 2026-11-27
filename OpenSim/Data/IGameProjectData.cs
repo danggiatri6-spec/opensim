@@ -69,6 +69,13 @@ namespace OpenSim.Data
 
         GameProjectRevisionData GetRevision(UUID projectID, long revision);
 
+        /// <summary>
+        /// Atomically transitions a draft to Published only when its current
+        /// revision still matches and that immutable revision exists.
+        /// </summary>
+        bool PublishProject(UUID projectID, UUID ownerID, long expectedCurrentRevision,
+            DateTime expectedUpdatedUTC, DateTime updatedUTC);
+
         bool ArchiveProject(UUID projectID, UUID ownerID, DateTime updatedUTC);
     }
 }
