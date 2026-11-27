@@ -6,6 +6,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../../OpenSim/Framework/Console/MockConsole.cs" Link="OpenSimMockConsole.cs" />
     <Reference Include="OpenMetaverseTypes"><HintPath>../../../bin/OpenMetaverseTypes.dll</HintPath></Reference>
     <Reference Include="OpenSim.Services.Interfaces"><HintPath>../../../bin/OpenSim.Services.Interfaces.dll</HintPath></Reference>
     <Reference Include="OpenSim.Framework"><HintPath>../../../bin/OpenSim.Framework.dll</HintPath></Reference>
