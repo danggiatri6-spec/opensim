@@ -8,6 +8,7 @@ using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Data;
 using OpenSim.Framework.Servers.HttpServer;
+using OpenSim.Framework.Console;
 using OpenSim.GameRuntime;
 using OpenSim.Server.Base;
 using OpenSim.Services.Interfaces;
@@ -107,6 +108,11 @@ using var portProbe = new TcpListener(IPAddress.Loopback, 0);
 portProbe.Start();
 int port = ((IPEndPoint)portProbe.LocalEndpoint).Port;
 portProbe.Stop();
+
+// BaseHttpServer starts OpenSim's polling infrastructure, whose WorkManager
+// registers console commands during static initialization. The standalone
+// integration host has no interactive console, so install OpenSim's test console.
+MainConsole.Instance = new MockConsole();
 
 var server = new BaseHttpServer((uint)port, true, certPath, certPassword);
 GameCreatorServiceConnector? connector = null;
