@@ -89,6 +89,6 @@ The Game Runtime test runner exercises:
 - draft save with expected revision;
 - immutable revision retrieval;
 - optimistic metadata update;
-- publish route and owner-spoofing rejection.\n- archive route.\n- SQLite atomic publish, owner isolation, stale revision, repeated publish rejection, and immutable revision preservation.\n- service-level manifest validation before publication.
+- publish route, owner-spoofing rejection, and HTTP 409 revision-conflict mapping.\n- archive route.\n- SQLite atomic publish, owner isolation, stale revision, repeated publish rejection, and immutable revision preservation.\n- service-level validation of project/revision schema, malformed manifest JSON, missing revisions, and manifest semantics before publication.
 
 These handler tests use fake authentication and project services. They do not replace SQLite provider integration tests or live Robust end-to-end acceptance.
