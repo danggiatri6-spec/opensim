@@ -195,6 +195,83 @@ try
     Assert(!(bool)Call(provider, "PublishProject", projectId, owner, 0L, updatedAt, DateTime.UtcNow)!,
         "SQLite rejects a stale publish revision");
 
+    // A schema-v2 project revision must pin exact immutable Experience revisions.
+    var graphProjectId = U("99999999-9999-4999-8999-999999999999");
+    var graphExperienceId = U("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+    var graphPlaceId = U("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb");
+    var graphProject = New("OpenSim.Data.GameProjectData", dataAssembly);
+    Set(graphProject, "ProjectID", graphProjectId); Set(graphProject, "OwnerID", owner);
+    Set(graphProject, "Name", "Pinned Graph"); Set(graphProject, "Description", "");
+    Set(graphProject, "Status", 0); Set(graphProject, "SchemaVersion", 1);
+    Set(graphProject, "CurrentRevision", 0L); Set(graphProject, "CreatedUTC", DateTime.UtcNow);
+    Set(graphProject, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateProject", graphProject)!, "SQLite creates project for v2 revision graph");
+
+    var graphExperience = New("OpenSim.Data.GameExperienceData", dataAssembly);
+    Set(graphExperience, "ProjectID", graphProjectId); Set(graphExperience, "ExperienceID", graphExperienceId);
+    Set(graphExperience, "CreatedUTC", DateTime.UtcNow); Set(graphExperience, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateExperience", graphExperience, owner)!, "v2 graph Experience is created");
+
+    var graphPlace = New("OpenSim.Data.GamePlaceData", dataAssembly);
+    Set(graphPlace, "ProjectID", graphProjectId); Set(graphPlace, "ExperienceID", graphExperienceId);
+    Set(graphPlace, "PlaceID", graphPlaceId); Set(graphPlace, "CreatedUTC", DateTime.UtcNow);
+    Set(graphPlace, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreatePlace", graphPlace, owner)!, "v2 graph Place is created");
+
+    var graphPlaceRevision = New("OpenSim.Data.GamePlaceRevisionData", dataAssembly);
+    Set(graphPlaceRevision, "ProjectID", graphProjectId); Set(graphPlaceRevision, "ExperienceID", graphExperienceId);
+    Set(graphPlaceRevision, "PlaceID", graphPlaceId); Set(graphPlaceRevision, "Revision", 1L);
+    Set(graphPlaceRevision, "SchemaVersion", 1); Set(graphPlaceRevision, "Name", "Pinned Place");
+    Set(graphPlaceRevision, "Description", ""); Set(graphPlaceRevision, "DefinitionJson", "{\"SchemaVersion\":1}");
+    Set(graphPlaceRevision, "CreatedBy", owner); Set(graphPlaceRevision, "CreatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "SavePlaceRevision", graphPlaceRevision, owner, 0L, DateTime.UtcNow)!, "v2 graph Place revision saves");
+
+    var graphExperienceRevision = New("OpenSim.Data.GameExperienceRevisionData", dataAssembly);
+    Set(graphExperienceRevision, "ProjectID", graphProjectId); Set(graphExperienceRevision, "ExperienceID", graphExperienceId);
+    Set(graphExperienceRevision, "Revision", 1L); Set(graphExperienceRevision, "SchemaVersion", 1);
+    Set(graphExperienceRevision, "Name", "Pinned Experience"); Set(graphExperienceRevision, "StartPlaceID", graphPlaceId);
+    Set(graphExperienceRevision, "CreatedBy", owner); Set(graphExperienceRevision, "CreatedUTC", DateTime.UtcNow);
+    ((IList)Get(graphExperienceRevision, "Places")!).Add(membership);
+    // Use a membership object scoped to this graph's Place ID.
+    var graphMembership = Activator.CreateInstance(membershipType)!;
+    Set(graphMembership, "PlaceID", graphPlaceId); Set(graphMembership, "PlaceRevision", 1L); Set(graphMembership, "SortOrder", 0);
+    ((IList)Get(graphExperienceRevision, "Places")!).Clear();
+    ((IList)Get(graphExperienceRevision, "Places")!).Add(graphMembership);
+    Assert((bool)Call(provider, "SaveExperienceRevision", graphExperienceRevision, owner, 0L, DateTime.UtcNow)!, "v2 graph Experience revision pins its Place revision");
+
+    var graphRevision = New("OpenSim.Data.GameProjectRevisionData", dataAssembly);
+    Set(graphRevision, "ProjectID", graphProjectId); Set(graphRevision, "Revision", 1L);
+    Set(graphRevision, "SchemaVersion", 2); Set(graphRevision, "ManifestJson", "{\"SchemaVersion\":2}");
+    Set(graphRevision, "CreatedBy", owner); Set(graphRevision, "CreatedUTC", DateTime.UtcNow);
+    var projectExperienceType = dataAssembly.GetType("OpenSim.Data.GameProjectExperienceRevisionData", true)!;
+    var projectExperienceRef = Activator.CreateInstance(projectExperienceType)!;
+    Set(projectExperienceRef, "ExperienceID", graphExperienceId);
+    Set(projectExperienceRef, "ExperienceRevision", 1L); Set(projectExperienceRef, "SortOrder", 0);
+    ((IList)Get(graphRevision, "Experiences")!).Add(projectExperienceRef);
+    Assert((bool)Call(provider, "SaveRevision", graphRevision, owner, 0L, DateTime.UtcNow)!, "v2 project revision atomically pins Experience revision");
+    var graphRevisionRead = Call(provider, "GetRevision", graphProjectId, 1L)!;
+    var graphRefs = (IList)Get(graphRevisionRead, "Experiences")!;
+    Assert(graphRefs.Count == 1 && Equals(Get(graphRefs[0]!, "ExperienceRevision"), 1L),
+        "v2 project revision reads back its exact Experience revision pin");
+    Assert((bool)Call(provider, "PublishProject", graphProjectId, owner, 1L,
+        (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow),
+        "v2 project publishes only after its immutable Experience graph is pinned");
+
+    var missingGraphProjectId = U("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
+    var missingGraphProject = New("OpenSim.Data.GameProjectData", dataAssembly);
+    Set(missingGraphProject, "ProjectID", missingGraphProjectId); Set(missingGraphProject, "OwnerID", owner);
+    Set(missingGraphProject, "Name", "Missing Graph"); Set(missingGraphProject, "Description", "");
+    Set(missingGraphProject, "Status", 0); Set(missingGraphProject, "SchemaVersion", 1);
+    Set(missingGraphProject, "CurrentRevision", 0L); Set(missingGraphProject, "CreatedUTC", DateTime.UtcNow);
+    Set(missingGraphProject, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateProject", missingGraphProject)!, "SQLite creates project for missing graph rejection");
+    var missingGraphRevision = New("OpenSim.Data.GameProjectRevisionData", dataAssembly);
+    Set(missingGraphRevision, "ProjectID", missingGraphProjectId); Set(missingGraphRevision, "Revision", 1L);
+    Set(missingGraphRevision, "SchemaVersion", 2); Set(missingGraphRevision, "ManifestJson", "{\"SchemaVersion\":2}");
+    Set(missingGraphRevision, "CreatedBy", owner); Set(missingGraphRevision, "CreatedUTC", DateTime.UtcNow);
+    Assert(!(bool)Call(provider, "SaveRevision", missingGraphRevision, owner, 0L, DateTime.UtcNow)!,
+        "v2 project revision without Experience pins is rejected");
+
     var servicesAssembly = Load("OpenSim.Services.UserAccountService");
     var projectServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameProjectService", true)!;
     var projectService = Activator.CreateInstance(projectServiceType, new[] { provider })!;
