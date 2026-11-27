@@ -43,6 +43,14 @@ var options = new GameRuntimeOptions
 var v2Projects = new FakeProjectService(owner, projectId, worldId);
 v2Projects.Revision.SchemaVersion = 2;
 v2Projects.RuntimeExperienceID = UUID.Random();
+v2Projects.SecondaryRuntimeExperienceID = UUID.Random();
+v2Projects.SecondaryRuntimeWorld = new GameWorldDefinition
+{
+    WorldID = UUID.Random(),
+    Name = "Secondary v2 World",
+    SizeX = 256,
+    SizeY = 256
+};
 v2Projects.RuntimeWorld = new GameWorldDefinition
 {
     WorldID = worldId,
@@ -62,7 +70,15 @@ await using (var v2Runtime = new GameRuntimeService(v2Projects, v2Workers, optio
     Assert(v2Workers.Sessions.Count == 1
         && v2Workers.Sessions[0].LastConfiguration.GetProperty("worldName").GetString() == "Pinned v2 World",
         "v2 runtime resolver supplies the Place world definition to the Worker");
+    GameInstanceResult v2SecondaryStarted = await v2Runtime.StartInstanceAsync(
+        owner, projectId, 1, v2Projects.SecondaryRuntimeExperienceID);
+    Assert(v2SecondaryStarted.Success
+        && v2SecondaryStarted.Instance?.ExperienceID == v2Projects.SecondaryRuntimeExperienceID,
+        "separate pinned Experiences can run as independent Game Instances for one project revision");
+    Assert(v2Workers.Sessions[^1].LastConfiguration.GetProperty("worldName").GetString() == "Secondary v2 World",
+        "selected secondary Experience resolves its own start Place");
     await v2Runtime.StopInstanceAsync(owner, v2Started.Instance!.InstanceID);
+    await v2Runtime.StopInstanceAsync(owner, v2SecondaryStarted.Instance!.InstanceID);
 }
 
 await using var runtime = new GameRuntimeService(projects, workers, options);
@@ -171,6 +187,8 @@ sealed class FakeProjectService : IGameProjectService, IGameProjectRuntimeDefini
     public GameProjectRevision? SecondRevision { get; private set; }
     public GameWorldDefinition? RuntimeWorld { get; set; }
     public UUID RuntimeExperienceID { get; set; }
+    public UUID SecondaryRuntimeExperienceID { get; set; }
+    public GameWorldDefinition? SecondaryRuntimeWorld { get; set; }
     public long LastResolvedRevision { get; private set; }
     public UUID LastResolvedExperienceID { get; private set; }
     public GameWorldDefinition? ResolveRuntimeWorld(UUID owner, UUID project, long revision)
@@ -184,11 +202,18 @@ sealed class FakeProjectService : IGameProjectService, IGameProjectRuntimeDefini
     {
         LastResolvedRevision = revision;
         LastResolvedExperienceID = experienceID;
-        return owner == Project.OwnerID && project == Project.ProjectID
-            && revision == Revision.Revision && Revision.SchemaVersion == 2
-            && (experienceID == UUID.Zero || experienceID == RuntimeExperienceID)
-            ? new GameRuntimeWorldDefinition { ExperienceID = RuntimeExperienceID, World = RuntimeWorld! }
-            : null;
+        if (owner != Project.OwnerID || project != Project.ProjectID
+            || revision != Revision.Revision || Revision.SchemaVersion != 2)
+            return null;
+        if (experienceID == UUID.Zero)
+            return SecondaryRuntimeExperienceID == UUID.Zero
+                ? new GameRuntimeWorldDefinition { ExperienceID = RuntimeExperienceID, World = RuntimeWorld! }
+                : null;
+        if (experienceID == RuntimeExperienceID)
+            return new GameRuntimeWorldDefinition { ExperienceID = RuntimeExperienceID, World = RuntimeWorld! };
+        if (experienceID == SecondaryRuntimeExperienceID)
+            return new GameRuntimeWorldDefinition { ExperienceID = SecondaryRuntimeExperienceID, World = SecondaryRuntimeWorld! };
+        return null;
     }
     public FakeProjectService(UUID owner, UUID project, UUID world)
     {
