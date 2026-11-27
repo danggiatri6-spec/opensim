@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
+using System.Reflection;
 using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Framework.Servers.HttpServer;
@@ -47,9 +48,20 @@ IConfig projectConfig = config.AddConfig("GameProjectService");
 projectConfig.Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteGameProjectData");
 projectConfig.Set("ConnectionString", connection);
 
-string authModule = config.Configs["AuthenticationService"]!.GetString("LocalServiceModule");
-IAuthenticationService auth = ServerUtils.LoadPlugin<IAuthenticationService>(authModule, new object[] { config });
-Assert(auth is not null, "production WebkeyAuthenticationService plugin loads with its SQLite dependencies");
+string authAssemblyPath = Path.Combine(AppContext.BaseDirectory, "OpenSim.Services.AuthenticationService.dll");
+Assembly authAssembly = Assembly.LoadFrom(authAssemblyPath);
+Type authType = authAssembly.GetType("OpenSim.Services.AuthenticationService.WebkeyAuthenticationService", true)!;
+Assert(typeof(IAuthenticationService).IsAssignableFrom(authType),
+    "production WebkeyAuthenticationService implements the host IAuthenticationService contract");
+IAuthenticationService auth;
+try
+{
+    auth = (IAuthenticationService)Activator.CreateInstance(authType, new object[] { config })!;
+}
+catch (Exception exception)
+{
+    throw new InvalidOperationException("Could not construct production WebkeyAuthenticationService with configured SQLite auth provider.", exception);
+}
 UUID principal = UUID.Random();
 string webKey = UUID.Random().ToString();
 Assert(auth.SetAuthInfo(new AuthInfo
@@ -73,7 +85,7 @@ var server = new BaseHttpServer((uint)port, true, certPath, certPassword);
 GameCreatorServiceConnector? connector = null;
 try
 {
-    connector = new GameCreatorServiceConnector(config, server, string.Empty);
+    connector = new GameCreatorServiceConnector(config, server, string.Empty, null, auth);
     server.Start();
 
     using var handler = new HttpClientHandler
