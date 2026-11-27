@@ -82,42 +82,42 @@ namespace OpenSim.Data.SQLite
             using (SQLiteCommand cmd = new SQLiteCommand("select * from `" + m_Realm + "` where UUID = :PrincipalID"))
             {
                 cmd.Parameters.Add(new SQLiteParameter(":PrincipalID", principalID.ToString()));
-
                 result = ExecuteReader(cmd, m_Connection);
             }
 
-            try
+            // The authentication connection is long-lived and shared. Every reader
+            // must be closed before another operation can write to the same SQLite
+            // database, otherwise an abandoned read cursor can hold a lock.
+            using (result)
             {
-                if (result.Read())
+                try
                 {
-                    ret.PrincipalID = principalID;
-
-                    if (m_ColumnNames == null)
+                    if (result.Read())
                     {
-                        m_ColumnNames = new List<string>();
+                        ret.PrincipalID = principalID;
 
-                        DataTable schemaTable = result.GetSchemaTable();
-                        foreach (DataRow row in schemaTable.Rows)
-                            m_ColumnNames.Add(row["ColumnName"].ToString());
+                        if (m_ColumnNames == null)
+                        {
+                            m_ColumnNames = new List<string>();
+                            DataTable schemaTable = result.GetSchemaTable();
+                            foreach (DataRow row in schemaTable.Rows)
+                                m_ColumnNames.Add(row["ColumnName"].ToString());
+                        }
+
+                        foreach (string s in m_ColumnNames)
+                        {
+                            if (s == "UUID")
+                                continue;
+                            ret.Data[s] = result[s].ToString();
+                        }
+
+                        return ret;
                     }
-
-                    foreach (string s in m_ColumnNames)
-                    {
-                        if (s == "UUID")
-                            continue;
-
-                        ret.Data[s] = result[s].ToString();
-                    }
-
-                    return ret;
                 }
-                else
+                catch (Exception e)
                 {
-                    return null;
+                    m_log.Error("[SQLITE]: Exception reading authentication data", e);
                 }
-            }
-            catch
-            {
             }
 
             return null;
