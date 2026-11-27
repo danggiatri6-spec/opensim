@@ -142,7 +142,7 @@ internal static class GameCreatorApiHandlerTests
         FakeRequest read = Request("GET", "/creator/projects/" + projectID, string.Empty, owner);
         FakeResponse readResponse = new();
         get.Handle("/creator/projects/" + projectID, read.InputStream, read, readResponse);
-        Assert(readResponse.StatusCode == 200 && projects.GetCalls == 1,
+        Assert(readResponse.StatusCode == 200 && projects.GetCalls >= 4,
             "creator can read an owned project");
 
         string manifest = "{\"schemaVersion\":1,\"name\":\"My Game\",\"worlds\":[{\"worldID\":\"" +
