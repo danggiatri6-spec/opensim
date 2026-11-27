@@ -294,7 +294,7 @@ namespace OpenSim.Services.UserAccountService
                 if (current == null || current.OwnerID != authenticatedOwnerID)
                     return Failure(GameProjectError.NotFound, "Project was not found.");
                 if (current.Status != (int)GameProjectStatus.Draft)
-                    return Failure(GameProjectError.Forbidden, "Only draft projects can be published.");
+                    return Failure(GameProjectError.RevisionConflict, "Only draft projects can be published; reload the project state.");
                 if (current.CurrentRevision != expectedCurrentRevision)
                     return Failure(GameProjectError.RevisionConflict, "Project revision has changed. Reload before publishing.");
 
