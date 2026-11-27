@@ -256,6 +256,14 @@ namespace OpenSim.Services.UserAccountService
                     Revision = data.Revision,
                     SchemaVersion = data.SchemaVersion,
                     ManifestJson = data.ManifestJson,
+                    Experiences = data.Experiences == null
+                        ? new List<GameProjectExperienceRevision>()
+                        : data.Experiences.Select(x => new GameProjectExperienceRevision
+                        {
+                            ExperienceID = x.ExperienceID,
+                            ExperienceRevision = x.ExperienceRevision,
+                            SortOrder = x.SortOrder
+                        }).ToList(),
                     CreatedBy = data.CreatedBy,
                     CreatedUTC = data.CreatedUTC
                 };
@@ -387,6 +395,14 @@ namespace OpenSim.Services.UserAccountService
         /// </summary>
         public GameWorldDefinition ResolveRuntimeWorld(UUID authenticatedOwnerID, UUID projectID, long projectRevision)
         {
+            GameRuntimeWorldDefinition resolved =
+                ResolveRuntimeDefinition(authenticatedOwnerID, projectID, projectRevision, UUID.Zero);
+            return resolved?.World;
+        }
+
+        public GameRuntimeWorldDefinition ResolveRuntimeDefinition(
+            UUID authenticatedOwnerID, UUID projectID, long projectRevision, UUID experienceID)
+        {
             if (authenticatedOwnerID == UUID.Zero || projectID == UUID.Zero || projectRevision < 1)
                 return null;
 
@@ -401,14 +417,27 @@ namespace OpenSim.Services.UserAccountService
                 if (revision == null || revision.ProjectID != projectID
                     || revision.Revision != projectRevision || revision.CreatedBy != authenticatedOwnerID
                     || revision.SchemaVersion != GameProjectV2Service.SchemaVersion
-                    || revision.Experiences == null || revision.Experiences.Count != 1)
+                    || revision.Experiences == null || revision.Experiences.Count == 0)
                     return null;
 
                 GameProjectV2Service v2 = new GameProjectV2Service(m_Database);
                 if (!v2.ValidateRevisionGraph(authenticatedOwnerID, projectID, revision))
                     return null;
 
-                GameProjectExperienceRevisionData experiencePin = revision.Experiences[0];
+                GameProjectExperienceRevisionData experiencePin;
+                if (experienceID == UUID.Zero)
+                {
+                    if (revision.Experiences.Count != 1)
+                        return null;
+                    experiencePin = revision.Experiences[0];
+                }
+                else
+                {
+                    experiencePin = revision.Experiences.SingleOrDefault(x => x != null && x.ExperienceID == experienceID);
+                    if (experiencePin == null)
+                        return null;
+                }
+
                 GameExperienceRevisionData experience = m_Database.GetExperienceRevision(
                     projectID, experiencePin.ExperienceID, experiencePin.ExperienceRevision);
                 if (experience == null || experience.CreatedBy != authenticatedOwnerID
@@ -447,7 +476,14 @@ namespace OpenSim.Services.UserAccountService
                         Visibility = "private"
                     }
                 };
-                return GameProjectManifestValidator.Validate(validationManifest).IsValid ? world : null;
+                if (!GameProjectManifestValidator.Validate(validationManifest).IsValid)
+                    return null;
+
+                return new GameRuntimeWorldDefinition
+                {
+                    ExperienceID = experiencePin.ExperienceID,
+                    World = world
+                };
             }
             catch
             {
