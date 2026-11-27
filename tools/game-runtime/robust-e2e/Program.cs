@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Reflection;
 using Nini.Config;
 using OpenMetaverse;
+using OpenSim.Data;
 using OpenSim.Framework.Servers.HttpServer;
 using OpenSim.GameRuntime;
 using OpenSim.Server.Base;
@@ -47,6 +48,20 @@ authConfig.Set("Realm", "auth");
 IConfig projectConfig = config.AddConfig("GameProjectService");
 projectConfig.Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteGameProjectData");
 projectConfig.Set("ConnectionString", connection);
+
+string sqliteAssemblyPath = Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll");
+Assembly sqliteAssembly = Assembly.LoadFrom(sqliteAssemblyPath);
+Type sqliteAuthType = sqliteAssembly.GetType("OpenSim.Data.SQLite.SQLiteAuthenticationData", true)!;
+Assert(typeof(IAuthenticationData).IsAssignableFrom(sqliteAuthType),
+    "production SQLiteAuthenticationData implements the host storage interface");
+try
+{
+    _ = Activator.CreateInstance(sqliteAuthType, new object[] { connection, "auth" });
+}
+catch (Exception exception)
+{
+    throw new InvalidOperationException("Could not initialize production SQLite authentication storage.", exception);
+}
 
 string authAssemblyPath = Path.Combine(AppContext.BaseDirectory, "OpenSim.Services.AuthenticationService.dll");
 Assembly authAssembly = Assembly.LoadFrom(authAssemblyPath);
