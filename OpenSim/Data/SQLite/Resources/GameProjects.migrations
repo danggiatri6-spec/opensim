@@ -159,3 +159,54 @@ BEFORE DELETE ON GameProjectRevisionExperiences
 BEGIN
     SELECT RAISE(ABORT, 'Project revision Experience membership is immutable');
 END;
+
+:VERSION 4
+CREATE TRIGGER TR_GameExperience_CurrentRevision_ValidStartPlace
+BEFORE UPDATE OF CurrentRevision ON GameExperiences
+WHEN NEW.CurrentRevision > 0 AND NOT EXISTS (
+    SELECT 1 FROM GameExperienceRevisions r
+    JOIN GameExperienceRevisionPlaces m
+      ON m.ProjectID = r.ProjectID AND m.ExperienceID = r.ExperienceID
+     AND m.ExperienceRevision = r.Revision AND m.PlaceID = r.StartPlaceID
+    WHERE r.ProjectID = NEW.ProjectID AND r.ExperienceID = NEW.ExperienceID
+      AND r.Revision = NEW.CurrentRevision
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Experience revision must include its start Place');
+END;
+
+CREATE TRIGGER TR_GameProject_CurrentRevision_RequiresExperiencePins
+BEFORE UPDATE OF CurrentRevision ON GameProjects
+WHEN EXISTS (
+    SELECT 1 FROM GameProjectRevisions r
+    WHERE r.ProjectID = NEW.ProjectID AND r.Revision = NEW.CurrentRevision AND r.SchemaVersion >= 2
+) AND NOT EXISTS (
+    SELECT 1 FROM GameProjectRevisionExperiences p
+    WHERE p.ProjectID = NEW.ProjectID AND p.ProjectRevision = NEW.CurrentRevision
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Schema-v2 project revision must pin an Experience revision');
+END;
+
+CREATE TRIGGER TR_GameProject_Publish_RequiresExperiencePins
+BEFORE UPDATE OF Status ON GameProjects
+WHEN NEW.Status = 1 AND EXISTS (
+    SELECT 1 FROM GameProjectRevisions r
+    WHERE r.ProjectID = NEW.ProjectID AND r.Revision = NEW.CurrentRevision AND r.SchemaVersion >= 2
+) AND NOT EXISTS (
+    SELECT 1 FROM GameProjectRevisionExperiences p
+    WHERE p.ProjectID = NEW.ProjectID AND p.ProjectRevision = NEW.CurrentRevision
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Cannot publish a schema-v2 project without pinned Experiences');
+END;
+
+CREATE TRIGGER TR_GameProjectRevisionExperiences_RequireV2
+BEFORE INSERT ON GameProjectRevisionExperiences
+WHEN NOT EXISTS (
+    SELECT 1 FROM GameProjectRevisions r
+    WHERE r.ProjectID = NEW.ProjectID AND r.Revision = NEW.ProjectRevision AND r.SchemaVersion >= 2
+)
+BEGIN
+    SELECT RAISE(ABORT, 'Experience pins require a schema-v2 project revision');
+END;
