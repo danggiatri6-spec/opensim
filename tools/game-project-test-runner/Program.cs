@@ -222,7 +222,7 @@ try
     Set(graphPlaceRevision, "ProjectID", graphProjectId); Set(graphPlaceRevision, "ExperienceID", graphExperienceId);
     Set(graphPlaceRevision, "PlaceID", graphPlaceId); Set(graphPlaceRevision, "Revision", 1L);
     Set(graphPlaceRevision, "SchemaVersion", 1); Set(graphPlaceRevision, "Name", "Pinned Place");
-    Set(graphPlaceRevision, "Description", ""); Set(graphPlaceRevision, "DefinitionJson", "{\\\"WorldID\\\":\\\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\\\",\\\"Name\\\":\\\"Pinned World\\\",\\\"Description\\\":\\\"\\\",\\\"SizeX\\\":256,\\\"SizeY\\\":256,\\\"SpawnPoints\\\":[],\\\"AssetReferences\\\":[]}");
+    Set(graphPlaceRevision, "Description", ""); Set(graphPlaceRevision, "DefinitionJson", "{\"WorldID\":\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\",\"Name\":\"Pinned World\",\"Description\":\"\",\"SizeX\":256,\"SizeY\":256,\"SpawnPoints\":[],\"AssetReferences\":[]}");
     Set(graphPlaceRevision, "CreatedBy", owner); Set(graphPlaceRevision, "CreatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "SavePlaceRevision", graphPlaceRevision, owner, 0L, DateTime.UtcNow)!, "v2 graph Place revision saves");
 
