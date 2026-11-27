@@ -222,7 +222,7 @@ try
     Set(graphPlaceRevision, "ProjectID", graphProjectId); Set(graphPlaceRevision, "ExperienceID", graphExperienceId);
     Set(graphPlaceRevision, "PlaceID", graphPlaceId); Set(graphPlaceRevision, "Revision", 1L);
     Set(graphPlaceRevision, "SchemaVersion", 1); Set(graphPlaceRevision, "Name", "Pinned Place");
-    Set(graphPlaceRevision, "Description", ""); Set(graphPlaceRevision, "DefinitionJson", "{\"SchemaVersion\":1}");
+    Set(graphPlaceRevision, "Description", ""); Set(graphPlaceRevision, "DefinitionJson", "{\\\"WorldID\\\":\\\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\\\",\\\"Name\\\":\\\"Pinned World\\\",\\\"Description\\\":\\\"\\\",\\\"SizeX\\\":256,\\\"SizeY\\\":256,\\\"SpawnPoints\\\":[],\\\"AssetReferences\\\":[]}");
     Set(graphPlaceRevision, "CreatedBy", owner); Set(graphPlaceRevision, "CreatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "SavePlaceRevision", graphPlaceRevision, owner, 0L, DateTime.UtcNow)!, "v2 graph Place revision saves");
 
@@ -254,6 +254,29 @@ try
     Assert((bool)Call(provider, "PublishProject", graphProjectId, owner, 1L,
         (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow)!,
         "v2 project publishes only after its immutable Experience graph is pinned");
+
+    var runtimeServicesAssembly = Load("OpenSim.Services.UserAccountService");
+    var runtimeProjectServiceType = runtimeServicesAssembly.GetType(
+        "OpenSim.Services.UserAccountService.GameProjectService", true)!;
+    var runtimeProjectService = Activator.CreateInstance(runtimeProjectServiceType, new[] { provider })!;
+    var resolveRuntimeWorld = runtimeProjectServiceType.GetMethod("ResolveRuntimeWorld")!;
+    var resolvedPinnedWorld = resolveRuntimeWorld.Invoke(runtimeProjectService, new[] { owner, graphProjectId, (object)1L })!;
+    Assert((string)Get(resolvedPinnedWorld, "Name")! == "Pinned World",
+        "v2 runtime resolver loads the exact Place revision pinned by the published project revision");
+
+    var newerPlaceRevision = New("OpenSim.Data.GamePlaceRevisionData", dataAssembly);
+    Set(newerPlaceRevision, "ProjectID", graphProjectId); Set(newerPlaceRevision, "ExperienceID", graphExperienceId);
+    Set(newerPlaceRevision, "PlaceID", graphPlaceId); Set(newerPlaceRevision, "Revision", 2L);
+    Set(newerPlaceRevision, "SchemaVersion", 1); Set(newerPlaceRevision, "Name", "Updated Place");
+    Set(newerPlaceRevision, "Description", ""); Set(newerPlaceRevision, "DefinitionJson",
+        "{\\"WorldID\\":\\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\\",\\"Name\\":\\"Updated World\\",\\"Description\\":\\"\\",\\"SizeX\\":256,\\"SizeY\\":256,\\"SpawnPoints\\":[],\\"AssetReferences\\":[]}");
+    Set(newerPlaceRevision, "CreatedBy", owner); Set(newerPlaceRevision, "CreatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "SavePlaceRevision", newerPlaceRevision, owner, 1L, DateTime.UtcNow)!,
+        "a later immutable Place revision can be saved without rewriting history");
+    var resolvedAfterPlaceUpdate = resolveRuntimeWorld.Invoke(runtimeProjectService,
+        new[] { owner, graphProjectId, (object)1L })!;
+    Assert((string)Get(resolvedAfterPlaceUpdate, "Name")! == "Pinned World",
+        "runtime resolver continues using the project's pinned Place revision after a newer Place revision is saved");
 
     var missingGraphProjectId = U("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
     var missingGraphProject = New("OpenSim.Data.GameProjectData", dataAssembly);
