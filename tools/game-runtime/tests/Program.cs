@@ -182,6 +182,7 @@ sealed class FakeProjectService : IGameProjectService
         return null;
     }
     public GameProjectResult UpdateMetadata(UUID owner, UUID id, long expected, string name, string description) => throw new NotImplementedException();
+    public GameProjectResult PublishProject(UUID owner, UUID id, long expected) => throw new NotImplementedException();
     public bool ArchiveProject(UUID owner, UUID id) => false;
 }
 
