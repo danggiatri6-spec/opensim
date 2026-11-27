@@ -24,6 +24,8 @@ namespace OpenSim.Services.UserAccountService
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private const int MaximumPageSize = 100;
         private readonly IGameProjectData m_Database;
+        public GameExperienceService ExperienceService { get; }
+        public GameProjectV2Service ProjectV2Service { get; }
 
         public GameProjectService(IConfigSource config) : base(config)
         {
@@ -52,12 +54,16 @@ namespace OpenSim.Services.UserAccountService
             m_Database = LoadPlugin<IGameProjectData>(dllName, new object[] { connectionString });
             if (m_Database == null)
                 throw new Exception("Could not load an IGameProjectData provider");
+            ExperienceService = new GameExperienceService(m_Database);
+            ProjectV2Service = new GameProjectV2Service(m_Database);
         }
 
         // Injection constructor for provider-level tests and embedded hosts.
         public GameProjectService(IGameProjectData database) : base(null)
         {
             m_Database = database ?? throw new ArgumentNullException(nameof(database));
+            ExperienceService = new GameExperienceService(m_Database);
+            ProjectV2Service = new GameProjectV2Service(m_Database);
         }
 
         public GameProjectResult CreateProject(UUID authenticatedOwnerID, string name, string description)
