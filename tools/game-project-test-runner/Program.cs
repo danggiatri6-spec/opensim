@@ -64,6 +64,28 @@ Assert(places.Count == 1 && Equals(Get(places[0]!, "PlaceID"), worldId),
 Assert(((IList)Get(places[0]!, "Worlds")!).Count == 1,
     "legacy Place retains its declarative world definition");
 
+var experienceValidator = contracts.GetType("OpenSim.Services.Interfaces.GameExperienceValidator", true)!;
+var validExperience = experienceValidator.GetMethod("Validate")!.Invoke(null, new[] { experience })!;
+Assert((bool)Get(validExperience, "IsValid")!,
+    "Experience with unique Places and a valid start Place is accepted");
+var invalidStartExperience = New(experience.GetType().FullName!, contracts);
+Set(invalidStartExperience, "ExperienceID", experienceId);
+Set(invalidStartExperience, "Name", "Invalid start");
+Set(invalidStartExperience, "StartPlaceID", U("88888888-8888-4888-8888-888888888888"));
+((IList)Get(invalidStartExperience, "Places")!).Add(places[0]);
+var invalidStart = experienceValidator.GetMethod("Validate")!.Invoke(null, new[] { invalidStartExperience })!;
+Assert(!(bool)Get(invalidStart, "IsValid")!,
+    "Experience rejects a StartPlaceID that is not part of the Experience");
+var duplicatePlaceExperience = New(experience.GetType().FullName!, contracts);
+Set(duplicatePlaceExperience, "ExperienceID", experienceId);
+Set(duplicatePlaceExperience, "Name", "Duplicate Place");
+Set(duplicatePlaceExperience, "StartPlaceID", worldId);
+((IList)Get(duplicatePlaceExperience, "Places")!).Add(places[0]);
+((IList)Get(duplicatePlaceExperience, "Places")!).Add(places[0]);
+var duplicatePlace = experienceValidator.GetMethod("Validate")!.Invoke(null, new[] { duplicatePlaceExperience })!;
+Assert(!(bool)Get(duplicatePlace, "IsValid")!,
+    "Experience rejects duplicate Place IDs");
+
 var invalidManifest = New(manifestType.FullName!, contracts);
 Set(invalidManifest, "Name", "Missing world");
 var invalid = validatorType.GetMethod("Validate")!.Invoke(null, new[] { invalidManifest })!;
