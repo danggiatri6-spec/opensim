@@ -56,7 +56,8 @@ internal static class GameCreatorApiHandlerTests
             "{\\"project_id\\":\\"" + project + "\\",\\"revision\\":1,\\"experience_id\\":\\"" + selectedExperience + "\\"}", creator);
         FakeResponse selectedResponse = new();
         handler.Handle("/creator/instances", selected.InputStream, selected, selectedResponse);
-        Assert(selectedResponse.StatusCode == 201 && runtime.StartCalls == 2,
+        Assert(selectedResponse.StatusCode == 201 && runtime.StartCalls == 2
+            && runtime.LastExperienceID == selectedExperience,
             "Creator start request accepts an explicit Experience selector");
 
         FakeRequest oversized = Request("POST", "/creator/instances",
@@ -331,6 +332,7 @@ internal static class GameCreatorApiHandlerTests
         public int GetCalls { get; private set; }
         public int ListCalls { get; private set; }
         public UUID LastOwnerID { get; private set; }
+        public UUID LastExperienceID { get; private set; }
         public Task<GameInstanceResult> StartInstanceAsync(UUID authenticatedOwnerID, UUID projectID, long revision, CancellationToken cancellationToken = default)
         {
             StartCalls++;
@@ -348,6 +350,7 @@ internal static class GameCreatorApiHandlerTests
         {
             StartCalls++;
             LastOwnerID = authenticatedOwnerID;
+            LastExperienceID = experienceID;
             return Task.FromResult(new GameInstanceResult
             {
                 Error = GameInstanceError.None,
