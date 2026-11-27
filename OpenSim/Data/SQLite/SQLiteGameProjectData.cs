@@ -205,8 +205,9 @@ WHERE EXISTS (
                     using (SQLiteCommand update = connection.CreateCommand())
                     {
                         update.Transaction = transaction;
-                        update.CommandText = @"UPDATE GameProjects SET CurrentRevision = @NewRevision, UpdatedUTC = @UpdatedUTC
-WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @ExpectedRevision AND Status = 0";
+                        update.CommandText = @"UPDATE GameProjects SET SchemaVersion = @SchemaVersion, CurrentRevision = @NewRevision, UpdatedUTC = @UpdatedUTC
+WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @ExpectedRevision AND Status = 0 AND SchemaVersion <= @SchemaVersion";
+                        update.Parameters.AddWithValue("@SchemaVersion", revision.SchemaVersion);
                         update.Parameters.AddWithValue("@NewRevision", revision.Revision);
                         update.Parameters.AddWithValue("@UpdatedUTC", FormatDate(updatedUTC));
                         update.Parameters.AddWithValue("@ProjectID", revision.ProjectID.ToString());
