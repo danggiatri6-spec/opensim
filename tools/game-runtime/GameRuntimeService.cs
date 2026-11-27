@@ -95,8 +95,13 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
         ValidateOptions(options);
     }
 
+    public Task<GameInstanceResult> StartInstanceAsync(
+        UUID authenticatedOwnerID, UUID projectID, long revision, CancellationToken cancellationToken = default) =>
+        StartInstanceAsync(authenticatedOwnerID, projectID, revision, UUID.Zero, cancellationToken);
+
     public async Task<GameInstanceResult> StartInstanceAsync(
-        UUID authenticatedOwnerID, UUID projectID, long revision, CancellationToken cancellationToken = default)
+        UUID authenticatedOwnerID, UUID projectID, long revision, UUID experienceID,
+        CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         if (authenticatedOwnerID == UUID.Zero)
@@ -122,17 +127,23 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
             return Failure(GameInstanceError.InvalidRevision, "The requested immutable project revision was not found.");
 
         GameWorldDefinition? world;
+        UUID selectedExperienceID = UUID.Zero;
         if (storedRevision.SchemaVersion == 2)
         {
             if (_projects is not IGameProjectRuntimeDefinitionService resolver)
                 return Failure(GameInstanceError.InvalidManifest, "The v2 runtime definition resolver is unavailable.");
-            world = resolver.ResolveRuntimeWorld(authenticatedOwnerID, projectID, revision);
-            if (world is null)
+            GameRuntimeWorldDefinition? resolved =
+                resolver.ResolveRuntimeDefinition(authenticatedOwnerID, projectID, revision, experienceID);
+            if (resolved?.World is null || resolved.ExperienceID == UUID.Zero)
                 return Failure(GameInstanceError.InvalidManifest,
-                    "The immutable v2 Experience/Place graph could not be resolved for runtime.");
+                    "The requested immutable v2 Experience/Place graph could not be resolved for runtime.");
+            selectedExperienceID = resolved.ExperienceID;
+            world = resolved.World;
         }
         else
         {
+            if (experienceID != UUID.Zero)
+                return Failure(GameInstanceError.InvalidRevision, "Experience selection is only valid for schema-v2 projects.");
             GameProjectManifest manifest;
             try
             {
@@ -157,13 +168,14 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 return Failure(GameInstanceError.InvalidManifest, "Default world did not resolve uniquely.");
         }
 
-        string reservationKey = authenticatedOwnerID + ":" + projectID + ":" + revision;
+        string reservationKey = authenticatedOwnerID + ":" + projectID + ":" + revision + ":" + selectedExperienceID;
         var record = new InstanceRecord(new GameInstance
         {
             InstanceID = UUID.Random(),
             OwnerID = authenticatedOwnerID,
             ProjectID = projectID,
             ProjectRevision = revision,
+            ExperienceID = selectedExperienceID,
             WorldID = UUID.Random(),
             State = GameInstanceState.Starting,
             CreatedUTC = DateTime.UtcNow
@@ -194,6 +206,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
                 gameInstanceId = record.Snapshot.InstanceID.ToString(),
                 projectId = projectID.ToString(),
                 projectRevision = revision,
+                experienceId = selectedExperienceID.ToString(),
                 worldDefinitionId = world.WorldID.ToString(),
                 worldName = world.Name,
                 sizeX = world.SizeX,
@@ -339,7 +352,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
 
     private async Task ReleaseReservationAsync(InstanceRecord record)
     {
-        string key = record.Snapshot.OwnerID + ":" + record.Snapshot.ProjectID + ":" + record.Snapshot.ProjectRevision;
+        string key = record.Snapshot.OwnerID + ":" + record.Snapshot.ProjectID + ":" + record.Snapshot.ProjectRevision + ":" + record.Snapshot.ExperienceID;
         await _registryLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -379,6 +392,7 @@ public sealed class GameRuntimeService : IGameRuntimeService, IAsyncDisposable
         OwnerID = source.OwnerID,
         ProjectID = source.ProjectID,
         ProjectRevision = source.ProjectRevision,
+        ExperienceID = source.ExperienceID,
         WorldID = source.WorldID,
         State = source.State,
         CreatedUTC = source.CreatedUTC,
