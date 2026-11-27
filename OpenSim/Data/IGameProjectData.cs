@@ -25,6 +25,13 @@ namespace OpenSim.Data
         public DateTime UpdatedUTC { get; set; }
     }
 
+    public sealed class GameProjectExperienceRevisionData
+    {
+        public UUID ExperienceID { get; set; }
+        public long ExperienceRevision { get; set; }
+        public int SortOrder { get; set; }
+    }
+
     public sealed class GameProjectRevisionData
     {
         public UUID ProjectID { get; set; }
@@ -33,6 +40,7 @@ namespace OpenSim.Data
         public string ManifestJson { get; set; } = string.Empty;
         public UUID CreatedBy { get; set; }
         public DateTime CreatedUTC { get; set; }
+        public List<GameProjectExperienceRevisionData> Experiences { get; set; } = new List<GameProjectExperienceRevisionData>();
     }
 
     public sealed class GameExperienceData
