@@ -1,6 +1,6 @@
-# Creator Project API — W6-E
+# Creator Project API — W6-E / W6-F / W7
 
-Status: W6-E and W6-F implemented; CI validation pending for current commit series  
+Status: W6-E and W6-F implemented. W7 live HTTPS integration harness added; final CI verification is in progress.  
 Branch: opensim-next-dev  
 Date: 2026-11-27
 
@@ -34,7 +34,8 @@ The connector registers GET, POST, PUT and PATCH handlers under `/creator/projec
 | PUT | `/creator/projects/{project_id}/draft` | `expected_current_revision`, `manifest`; validates and saves a new immutable revision |
 | GET | `/creator/projects/{project_id}/revisions/{revision}` | Reads an owned immutable revision |
 | PATCH | `/creator/projects/{project_id}` | `expected_current_revision`, `name`, optional `description`; optimistic concurrency |
-| POST | `/creator/projects/{project_id}/publish` | `expected_current_revision`; validates and atomically publishes the current immutable revision |\n| POST | `/creator/projects/{project_id}/archive` | Archives the owned project |
+| POST | `/creator/projects/{project_id}/publish` | `expected_current_revision`; validates and atomically publishes the current immutable revision |
+| POST | `/creator/projects/{project_id}/archive` | Archives the owned project |
 
 A newly created project starts at revision 0. The first successful draft save must provide `expected_current_revision: 0`, producing immutable revision 1. Subsequent saves must send the latest current revision. Revision conflicts return HTTP 409. The project service rechecks owner, draft state, manifest validity, and revision under the storage boundary.
 
@@ -65,9 +66,11 @@ After publishing, draft saves and metadata updates are rejected by the service. 
 
 The project service validates the manifest before invoking the storage transition. The provider also independently enforces the atomic state/revision/ownership preconditions; it does not replace service-level semantic manifest validation.
 
-## Remaining acceptance scope
+## W7 live HTTPS integration
 
-The current tests cover the service-to-SQLite publish path and Creator HTTP route with fake services. A live Robust listener end-to-end test using the production authentication module and configured database remains a separate deployment acceptance gate.
+`tools/game-runtime/robust-e2e/` starts the production `BaseHttpServer` with a test-only localhost TLS certificate, loads the production `WebkeyAuthenticationService` and SQLite authentication provider, and uses the configured SQLite Game Project provider. It sends real HTTPS requests through the registered Creator connector and verifies project creation, list/read persistence, and principal-bound token isolation. The certificate is generated for the test and is not a deployment credential.
+
+This is a live HTTP listener integration test, not yet a full `Robust.exe` process/grid startup test. Full Robust startup, configuration loading, service registration, and shutdown remain a separate deployment acceptance gate. The integration runner must pass cleanup as well as request assertions.
 
 ## Operational configuration
 
@@ -91,4 +94,4 @@ The Game Runtime test runner exercises:
 - optimistic metadata update;
 - publish route, owner-spoofing rejection, and HTTP 409 revision-conflict mapping.\n- archive route.\n- SQLite atomic publish, owner isolation, stale revision, repeated publish rejection, and immutable revision preservation.\n- service-level validation of project/revision schema, malformed manifest JSON, missing revisions, and manifest semantics before publication.
 
-These handler tests use fake authentication and project services. They do not replace SQLite provider integration tests or live Robust end-to-end acceptance.
+Handler-level tests use fake authentication and project services. Separate live HTTPS integration tests exercise the production authentication module, SQLite providers, actual `BaseHttpServer`, Creator connector registration, project create/list, and cross-principal token rejection.
