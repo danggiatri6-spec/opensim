@@ -54,7 +54,8 @@ Initial `CreateWorld` payload is derived from trusted server-side data:
 - schema version;
 - host-generated Game Instance ID;
 - project ID and immutable revision number for diagnostics;
-- resolved default world ID, dimensions, and bounded world metadata;
+- resolved start Place world ID, dimensions, and bounded world metadata;
+- selected Experience ID (for schema-v2 projects);
 - Balanced profile, fixed 30 Hz timestep, and default gravity;
 - worker-enforced body, event, and catch-up limits.
 
@@ -64,7 +65,8 @@ Do not pass raw asset contents, arbitrary URLs, scripts, creator API keys, payme
 
 The first service surface should be deliberately small:
 
-- `StartInstanceAsync(authenticatedOwnerID, projectID, revision)`
+- `StartInstanceAsync(authenticatedOwnerID, projectID, revision)` for v1 and single-Experience v2 revisions.
+- `StartInstanceAsync(authenticatedOwnerID, projectID, revision, experienceID)` to select one exact Experience pinned by a v2 project revision. Omitting `experienceID` is rejected as ambiguous when more than one Experience is pinned.
 - `StopInstanceAsync(authenticatedOwnerID, instanceID)`
 - `GetInstanceAsync(authenticatedOwnerID, instanceID)`
 - `GetOwnedInstancesAsync(authenticatedOwnerID, offset, limit)`
@@ -137,9 +139,10 @@ No W6 gate is considered complete merely because the standalone Worker tests pas
 - [x] Linux and Windows CI for the existing service-level test runner.
 - [x] Real child-process acceptance test: authenticated launch, world creation, simulation start, graceful stop, and process reap (Linux CI).
 - [x] Config-driven service plugin and CI deployment bundle.
-- [ ] Automatic host service-registry/API endpoint registration and Creator-facing access path.
+- [x] Creator-facing HTTPS instance endpoints registered through `GameCreatorServiceConnector` when `[GameRuntimeService] Enabled=true`.
 - [x] Fault-stop cleanup, typed stop errors, and faulted child-process reaping tests.
-- [ ] Full host-shutdown acceptance test with multiple live instances.
+- [x] In-process host-shutdown lifecycle test with multiple live instances.
+- [ ] Full Robust host-shutdown acceptance test with multiple live instances.
 
 The real-process acceptance runner uses the production Worker executable and Supervisor over the platform IPC transport. Linux child-process lifecycle passed; Windows Named Pipes supervisor tests also passed. The standalone runtime assembly is intentionally not yet registered as a default OpenSim service. It remains disabled unless explicitly constructed with `GameRuntimeOptions.Enabled = true`; service registration follows after deployment paths and shutdown ownership are proven.
 
