@@ -104,3 +104,14 @@ No endpoint may accept a caller-supplied owner ID as an authorization source. Th
 - C0-P5: immutable project → Experience → Place revision pinning in publish/runtime resolution.
 
 Do not start API or runtime integration before provider-level revision graph tests pass.
+## 9. Implementation status
+
+The SQLite provider now has additive identity and revision records for Experiences and Places, compare-and-save operations, owner-scoped reads, and immutable revision triggers. Experience revision saves atomically pin exact Place revisions.
+
+Project revision data now carries an ordered list of exact Experience revision references. For project manifest schema version 2 or later, provider saves require at least one Experience pin; the revision row and all pin rows are inserted in one transaction before the project's current revision pointer advances. Reads return the pinned references. Publishing a schema-v2 revision requires the pinned graph.
+
+SQLite migration v4 adds database-level guards for valid Experience start-Place membership and required project revision pins. The existing schema-v1 project and manifest flow remains unchanged.
+
+The Creator service and HTTPS API still expose the legacy v1 manifest workflow. They do not yet create or edit durable Experience / Place records, nor publish schema-v2 manifests. Provider-level persistence is not yet equivalent to end-to-end Creator API support.
+
+Next: add service-layer Experience / Place operations, define and validate the schema-v2 manifest contract, then expose owner-authorized additive HTTPS endpoints. Only after those tests pass should runtime provisioning resolve the pinned graph.
