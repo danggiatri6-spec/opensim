@@ -18,17 +18,19 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
 {
     private const int MaximumBodyBytes = GameExperienceService.MaximumDefinitionCharacters + 64 * 1024;
     private readonly GameCreatorRequestAuthenticator _authenticator;
+    private readonly IGameProjectService _projectService;
     private readonly GameExperienceService _experiences;
     private readonly GameProjectV2Service _projectsV2;
     private readonly GameCreatorRequestRateLimiter _rateLimiter;
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     public GameCreatorExperienceApiHandler(string method, GameCreatorRequestAuthenticator authenticator,
-        GameExperienceService experiences, GameProjectV2Service projectsV2,
+        IGameProjectService projectService, GameExperienceService experiences, GameProjectV2Service projectsV2,
         GameCreatorRequestRateLimiter? rateLimiter = null)
         : base(method, "/creator/projects")
     {
         _authenticator = authenticator ?? throw new ArgumentNullException(nameof(authenticator));
+        _projectService = projectService ?? throw new ArgumentNullException(nameof(projectService));
         _experiences = experiences ?? throw new ArgumentNullException(nameof(experiences));
         _projectsV2 = projectsV2 ?? throw new ArgumentNullException(nameof(projectsV2));
         _rateLimiter = rateLimiter ?? new GameCreatorRequestRateLimiter();
@@ -66,6 +68,8 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
         if (s.Length < 4 || s[0] != "creator" || s[1] != "projects"
             || !TryId(s[2], out UUID projectID))
             return Reply(response, HttpStatusCode.NotFound, new { error = "not_found" });
+        if (!_projectService.GetProject(owner, projectID).Success)
+            return NotFound(response);
 
         if (s.Length == 4 && s[3] == "experiences")
         {
@@ -141,8 +145,9 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
         {
             if (HasOwnerField(doc!.RootElement)) return BadRequest(response);
             var created = _experiences.CreateExperience(owner, projectID);
-            return created is null ? NotFound(response)
-                : Reply(response, HttpStatusCode.Created, new { experience = created });
+            if (created is null) return NotFound(response);
+            response.AddHeader("Location", "/creator/projects/" + projectID + "/experiences/" + created.ExperienceID);
+            return Reply(response, HttpStatusCode.Created, new { experience = created });
         }
     }
 
@@ -155,8 +160,9 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
         {
             if (HasOwnerField(doc!.RootElement)) return BadRequest(response);
             var created = _experiences.CreatePlace(owner, projectID, experienceID);
-            return created is null ? NotFound(response)
-                : Reply(response, HttpStatusCode.Created, new { place = created });
+            if (created is null) return NotFound(response);
+            response.AddHeader("Location", "/creator/projects/" + projectID + "/experiences/" + experienceID + "/places/" + created.PlaceID);
+            return Reply(response, HttpStatusCode.Created, new { place = created });
         }
     }
 
