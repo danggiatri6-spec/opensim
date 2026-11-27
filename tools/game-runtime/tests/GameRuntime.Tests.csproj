@@ -9,6 +9,12 @@
     <Reference Include="OpenSim.Services.Interfaces">
       <HintPath>../../../bin/OpenSim.Services.Interfaces.dll</HintPath>
     </Reference>
+    <Reference Include="OpenSim.Data">
+      <HintPath>../../../bin/OpenSim.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenSim.Services.UserAccountService">
+      <HintPath>../../../bin/OpenSim.Services.UserAccountService.dll</HintPath>
+    </Reference>
     <Reference Include="OpenMetaverseTypes">
       <HintPath>../../../bin/OpenMetaverseTypes.dll</HintPath>
     </Reference>
