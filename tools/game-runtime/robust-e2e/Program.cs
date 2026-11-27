@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using Nini.Config;
 using OpenMetaverse;
 using OpenSim.Framework.Servers.HttpServer;
@@ -34,17 +35,17 @@ using (RSA rsa = RSA.Create(2048))
 }
 
 var config = new IniConfigSource();
-config.AddConfig("GameRuntimeService")
-    .Set("Enabled", true)
-    .Set("WorkerAssemblyPath", "worker/GamePhysicsWorker.dll");
-config.AddConfig("AuthenticationService")
-    .Set("LocalServiceModule", Path.Combine(AppContext.BaseDirectory, "OpenSim.Services.AuthenticationService.dll") + ":WebkeyAuthenticationService")
-    .Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteAuthenticationData")
-    .Set("ConnectionString", connection)
-    .Set("Realm", "auth");
-config.AddConfig("GameProjectService")
-    .Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteGameProjectData")
-    .Set("ConnectionString", connection);
+IConfig runtimeConfig = config.AddConfig("GameRuntimeService");
+runtimeConfig.Set("Enabled", true);
+runtimeConfig.Set("WorkerAssemblyPath", "worker/GamePhysicsWorker.dll");
+IConfig authConfig = config.AddConfig("AuthenticationService");
+authConfig.Set("LocalServiceModule", Path.Combine(AppContext.BaseDirectory, "OpenSim.Services.AuthenticationService.dll") + ":WebkeyAuthenticationService");
+authConfig.Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteAuthenticationData");
+authConfig.Set("ConnectionString", connection);
+authConfig.Set("Realm", "auth");
+IConfig projectConfig = config.AddConfig("GameProjectService");
+projectConfig.Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteGameProjectData");
+projectConfig.Set("ConnectionString", connection);
 
 string authModule = config.Configs["AuthenticationService"]!.GetString("LocalServiceModule");
 IAuthenticationService auth = ServerUtils.LoadPlugin<IAuthenticationService>(authModule, new object[] { config });
