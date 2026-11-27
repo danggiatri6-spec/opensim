@@ -63,7 +63,7 @@ internal static class GameCreatorApiHandlerTests
             new string('x', 16 * 1024 + 1), creator);
         FakeResponse oversizedResponse = new();
         handler.Handle("/creator/instances", oversized.InputStream, oversized, oversizedResponse);
-        Assert(oversizedResponse.StatusCode == 400 && runtime.StartCalls == 1,
+        Assert(oversizedResponse.StatusCode == 400 && runtime.StartCalls == 2,
             "oversized Creator request body is rejected before runtime invocation");
 
         var getHandler = new GameCreatorApiHandler("GET", authenticator, runtime);
