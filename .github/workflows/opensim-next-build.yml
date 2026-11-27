@@ -81,13 +81,19 @@ jobs:
         run: |
           dotnet build --configuration Release tools/ai-friend-sqlite-test-runner/AiFriendSqliteTestRunner.csproj
           dotnet build --configuration Release tools/game-project-test-runner/GameProjectTestRunner.csproj
-          native_sqlite="$(find tools/ai-friend-sqlite-test-runner/bin/Release/net8.0 -type f -name 'libe_sqlite3.so' -print -quit)"
-          if [ -z "$native_sqlite" ]; then
-            echo "Could not find libe_sqlite3.so in the SQLite test runner output."
+          case "$(uname -m)" in
+            x86_64) sqlite_rid="linux-x64" ;;
+            aarch64) sqlite_rid="linux-arm64" ;;
+            ppc64le) sqlite_rid="linux-ppc64le" ;;
+            *) echo "Unsupported Linux architecture for SQLite integration tests: $(uname -m)"; exit 1 ;;
+          esac
+          native_sqlite="tools/ai-friend-sqlite-test-runner/bin/Release/net8.0/runtimes/$sqlite_rid/native/libe_sqlite3.so"
+          if [ ! -f "$native_sqlite" ]; then
+            echo "Could not find architecture-matched SQLite runtime: $native_sqlite"
             exit 1
           fi
           native_dir="$(dirname "$native_sqlite")"
-          echo "Found SQLite native runtime: $native_sqlite"
+          echo "Found architecture-matched SQLite native runtime: $native_sqlite"
           echo "LD_LIBRARY_PATH=$native_dir:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: Run live Robust Creator HTTPS integration tests
