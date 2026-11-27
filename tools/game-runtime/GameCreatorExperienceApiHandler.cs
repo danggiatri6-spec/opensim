@@ -55,6 +55,12 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
             return Reply(response, HttpStatusCode.TooManyRequests, new { error = "rate_limited" });
         }
 
+        return ProcessAuthenticatedRequest(requestData, request, response, owner);
+    }
+
+    public byte[] ProcessAuthenticatedRequest(Stream requestData, IOSHttpRequest request,
+        IOSHttpResponse response, UUID owner)
+    {
         string[] s = request.UriPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (s.Length < 4 || s[0] != "creator" || s[1] != "projects"
             || !TryId(s[2], out UUID projectID))
@@ -123,6 +129,7 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
             return SaveProjectV2Revision(requestData, request, response, owner, projectID);
 
         return Reply(response, HttpStatusCode.NotFound, new { error = "not_found" });
+    }
     }
 
     private byte[] CreateExperience(Stream body, IOSHttpRequest request, IOSHttpResponse response,
@@ -282,13 +289,22 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
     }
 
     private static bool TryId(string value, out UUID id) => UUID.TryParse(value, out id) && id != UUID.Zero;
-    private static bool TryIdProperty(JsonElement root, string name, out UUID id) =>
-        root.TryGetProperty(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
-        && TryId(value.GetString() ?? "", out id) || (id = UUID.Zero) != UUID.Zero;
-    private static bool Long(JsonElement root, string name, out long value) =>
-        root.TryGetProperty(name, out JsonElement v) && v.TryGetInt64(out value) || (value = 0) != long.MinValue;
-    private static bool Int(JsonElement root, string name, out int value) =>
-        root.TryGetProperty(name, out JsonElement v) && v.TryGetInt32(out value) || (value = 0) != int.MinValue;
+    private static bool TryIdProperty(JsonElement root, string name, out UUID id)
+    {
+        id = UUID.Zero;
+        return root.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.String && TryId(value.GetString() ?? "", out id);
+    }
+    private static bool Long(JsonElement root, string name, out long value)
+    {
+        value = 0;
+        return root.TryGetProperty(name, out JsonElement v) && v.TryGetInt64(out value);
+    }
+    private static bool Int(JsonElement root, string name, out int value)
+    {
+        value = 0;
+        return root.TryGetProperty(name, out JsonElement v) && v.TryGetInt32(out value);
+    }
     private static bool String(JsonElement root, string name, out string value)
     {
         value = string.Empty;
