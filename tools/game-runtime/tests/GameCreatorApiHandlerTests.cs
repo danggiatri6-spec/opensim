@@ -1,11 +1,14 @@
 using System.Collections;
 using System.Collections.Specialized;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using OpenMetaverse;
 using OpenSim.Framework.Servers.HttpServer;
 using OpenSim.GameRuntime;
 using OpenSim.Services.Interfaces;
+using OpenSim.Data;
+using OpenSim.Services.UserAccountService;
 
 internal static class GameCreatorApiHandlerTests
 {
@@ -85,6 +88,36 @@ internal static class GameCreatorApiHandlerTests
         var post = new GameCreatorProjectsApiHandler("POST", auth, projects);
         var put = new GameCreatorProjectsApiHandler("PUT", auth, projects);
         var patch = new GameCreatorProjectsApiHandler("PATCH", auth, projects);
+        IGameProjectData emptyData = DispatchProxy.Create<IGameProjectData, EmptyGameProjectDataProxy>();
+        var experienceService = new GameExperienceService(emptyData);
+        var projectV2Service = new GameProjectV2Service(emptyData);
+        var nestedGet = new GameCreatorProjectsApiHandler("GET", auth, projects, null, experienceService, projectV2Service);
+        var nestedPost = new GameCreatorProjectsApiHandler("POST", auth, projects, null, experienceService, projectV2Service);
+        var nestedPut = new GameCreatorProjectsApiHandler("PUT", auth, projects, null, experienceService, projectV2Service);
+
+        FakeRequest experienceList = Request("GET", "/creator/projects/" + projects.ProjectID + "/experiences", string.Empty, owner);
+        FakeResponse experienceListResponse = new();
+        nestedGet.Handle("/creator/projects/" + projects.ProjectID + "/experiences",
+            experienceList.InputStream, experienceList, experienceListResponse);
+        Assert(experienceListResponse.StatusCode == 200
+            && Encoding.UTF8.GetString(((MemoryStream)experienceListResponse.OutputStream).ToArray()).Contains("\"experiences\":[]"),
+            "nested Experience routes share the existing authenticated project handler");
+
+        FakeRequest experienceSpoof = Request("POST", "/creator/projects/" + projects.ProjectID + "/experiences",
+            "{\"ownerId\":\"" + UUID.Random() + "\"}", owner);
+        FakeResponse experienceSpoofResponse = new();
+        nestedPost.Handle("/creator/projects/" + projects.ProjectID + "/experiences",
+            experienceSpoof.InputStream, experienceSpoof, experienceSpoofResponse);
+        Assert(experienceSpoofResponse.StatusCode == 400,
+            "Experience identity creation rejects body-supplied owner identity");
+
+        FakeRequest projectV2Spoof = Request("PUT", "/creator/projects/" + projects.ProjectID + "/revisions/v2",
+            "{\"expectedCurrentRevision\":0,\"schemaVersion\":2,\"ownerId\":\"" + UUID.Random() + "\",\"experiences\":[]}", owner);
+        FakeResponse projectV2SpoofResponse = new();
+        nestedPut.Handle("/creator/projects/" + projects.ProjectID + "/revisions/v2",
+            projectV2Spoof.InputStream, projectV2Spoof, projectV2SpoofResponse);
+        Assert(projectV2SpoofResponse.StatusCode == 400,
+            "v2 project revision route rejects body-supplied owner identity");
 
         FakeRequest create = Request("POST", "/creator/projects",
             "{\"name\":\"My Game\",\"description\":\"prototype\"}", owner);
@@ -170,6 +203,19 @@ internal static class GameCreatorApiHandlerTests
         post.Handle("/creator/projects/" + projectID + "/archive", archive.InputStream, archive, archiveResponse);
         Assert(archiveResponse.StatusCode == 200 && projects.ArchiveCalls == 1,
             "creator can archive an owned project");
+    }
+
+    public class EmptyGameProjectDataProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            if (targetMethod is null) return null;
+            if (targetMethod.ReturnType == typeof(bool)) return false;
+            if (targetMethod.ReturnType == typeof(List<GameExperienceData>)) return new List<GameExperienceData>();
+            if (targetMethod.ReturnType == typeof(List<GamePlaceData>)) return new List<GamePlaceData>();
+            if (targetMethod.ReturnType == typeof(List<GameProjectData>)) return new List<GameProjectData>();
+            return null;
+        }
     }
 
     private sealed class FakeProjectService : IGameProjectService
