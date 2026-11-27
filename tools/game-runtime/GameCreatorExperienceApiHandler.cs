@@ -130,7 +130,6 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
 
         return Reply(response, HttpStatusCode.NotFound, new { error = "not_found" });
     }
-    }
 
     private byte[] CreateExperience(Stream body, IOSHttpRequest request, IOSHttpResponse response,
         UUID owner, UUID projectID)
