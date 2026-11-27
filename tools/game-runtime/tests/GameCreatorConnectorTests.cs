@@ -78,6 +78,10 @@ internal static class GameCreatorConnectorTests
         public bool Disposed { get; private set; }
         public Task<GameInstanceResult> StartInstanceAsync(UUID owner, UUID project, long revision, CancellationToken token = default) =>
             Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
+
+        public Task<GameInstanceResult> StartInstanceAsync(
+            UUID owner, UUID project, long revision, UUID experienceID, CancellationToken token = default) =>
+            Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
         public Task<GameInstanceResult> StopInstanceAsync(UUID owner, UUID instance, CancellationToken token = default) =>
             Task.FromResult(new GameInstanceResult { Error = GameInstanceError.NotFound });
         public Task<GameInstanceResult> GetInstanceAsync(UUID owner, UUID instance, CancellationToken token = default) =>
