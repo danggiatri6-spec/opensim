@@ -278,6 +278,71 @@ namespace OpenSim.Services.UserAccountService
             }
         }
 
+        public GameProjectResult PublishProject(
+            UUID authenticatedOwnerID,
+            UUID projectID,
+            long expectedCurrentRevision)
+        {
+            if (authenticatedOwnerID == UUID.Zero)
+                return Failure(GameProjectError.Forbidden, "An authenticated creator is required.");
+            if (projectID == UUID.Zero || expectedCurrentRevision < 1)
+                return Failure(GameProjectError.InvalidData, "A project with at least one saved revision is required.");
+
+            try
+            {
+                GameProjectData current = m_Database.GetProject(projectID);
+                if (current == null || current.OwnerID != authenticatedOwnerID)
+                    return Failure(GameProjectError.NotFound, "Project was not found.");
+                if (current.Status != (int)GameProjectStatus.Draft)
+                    return Failure(GameProjectError.Forbidden, "Only draft projects can be published.");
+                if (current.CurrentRevision != expectedCurrentRevision)
+                    return Failure(GameProjectError.RevisionConflict, "Project revision has changed. Reload before publishing.");
+
+                GameProjectRevisionData revision = m_Database.GetRevision(projectID, current.CurrentRevision);
+                if (revision == null || revision.ProjectID != projectID
+                    || revision.Revision != current.CurrentRevision
+                    || revision.CreatedBy != authenticatedOwnerID
+                    || revision.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion
+                    || string.IsNullOrEmpty(revision.ManifestJson)
+                    || revision.ManifestJson.Length > GameProjectManifestValidator.MaximumManifestCharacters)
+                    return Failure(GameProjectError.InvalidData, "The current immutable revision is missing or invalid.");
+
+                GameProjectManifest manifest;
+                try
+                {
+                    JsonSerializerOptions options = new JsonSerializerOptions();
+                    options.Converters.Add(new OpenMetaverseUuidJsonConverter());
+                    manifest = JsonSerializer.Deserialize<GameProjectManifest>(revision.ManifestJson, options);
+                }
+                catch
+                {
+                    return Failure(GameProjectError.InvalidData, "The current revision contains invalid manifest data.");
+                }
+
+                GameProjectValidationResult validation = GameProjectManifestValidator.Validate(manifest);
+                if (!validation.IsValid)
+                    return Failure(GameProjectError.InvalidData,
+                        "The current revision failed publication validation: " + string.Join(" ", validation.Errors));
+
+                if (!m_Database.PublishProject(projectID, authenticatedOwnerID,
+                    expectedCurrentRevision, current.UpdatedUTC, DateTime.UtcNow))
+                    return Failure(GameProjectError.RevisionConflict,
+                        "The project changed or is no longer eligible for publication.");
+
+                GameProjectData published = m_Database.GetProject(projectID);
+                if (published == null || published.OwnerID != authenticatedOwnerID
+                    || published.Status != (int)GameProjectStatus.Published
+                    || published.CurrentRevision != expectedCurrentRevision)
+                    return Failure(GameProjectError.StorageUnavailable, "Published project could not be reloaded.");
+
+                return Success(ToProject(published));
+            }
+            catch
+            {
+                return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
+            }
+        }
+
         public bool ArchiveProject(UUID authenticatedOwnerID, UUID projectID)
         {
             if (authenticatedOwnerID == UUID.Zero || projectID == UUID.Zero)
