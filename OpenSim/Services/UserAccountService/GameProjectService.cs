@@ -313,7 +313,8 @@ namespace OpenSim.Services.UserAccountService
                     return Failure(GameProjectError.NotFound, "Project was not found.");
                 if (current.Status != (int)GameProjectStatus.Draft)
                     return Failure(GameProjectError.RevisionConflict, "Only draft projects can be published; reload the project state.");
-                if (current.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion)
+                if (current.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion
+                    && current.SchemaVersion != GameProjectV2Service.SchemaVersion)
                     return Failure(GameProjectError.InvalidData, "The project schema version is not supported.");
                 if (current.CurrentRevision != expectedCurrentRevision)
                     return Failure(GameProjectError.RevisionConflict, "Project revision has changed. Reload before publishing.");
@@ -322,27 +323,37 @@ namespace OpenSim.Services.UserAccountService
                 if (revision == null || revision.ProjectID != projectID
                     || revision.Revision != current.CurrentRevision
                     || revision.CreatedBy != authenticatedOwnerID
-                    || revision.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion
+                    || revision.SchemaVersion != current.SchemaVersion
                     || string.IsNullOrEmpty(revision.ManifestJson)
                     || revision.ManifestJson.Length > GameProjectManifestValidator.MaximumManifestCharacters)
                     return Failure(GameProjectError.InvalidData, "The current immutable revision is missing or invalid.");
 
-                GameProjectManifest manifest;
-                try
+                if (current.SchemaVersion == GameProjectV2Service.SchemaVersion)
                 {
-                    JsonSerializerOptions options = new JsonSerializerOptions();
-                    options.Converters.Add(new OpenMetaverseUuidJsonConverter());
-                    manifest = JsonSerializer.Deserialize<GameProjectManifest>(revision.ManifestJson, options);
+                    GameProjectV2Service v2 = new GameProjectV2Service(m_Database);
+                    if (!v2.ValidateRevisionGraph(authenticatedOwnerID, projectID, revision))
+                        return Failure(GameProjectError.InvalidData,
+                            "The current v2 revision has an invalid Experience/Place graph.");
                 }
-                catch
+                else
                 {
-                    return Failure(GameProjectError.InvalidData, "The current revision contains invalid manifest data.");
-                }
+                    GameProjectManifest manifest;
+                    try
+                    {
+                        JsonSerializerOptions options = new JsonSerializerOptions();
+                        options.Converters.Add(new OpenMetaverseUuidJsonConverter());
+                        manifest = JsonSerializer.Deserialize<GameProjectManifest>(revision.ManifestJson, options);
+                    }
+                    catch
+                    {
+                        return Failure(GameProjectError.InvalidData, "The current revision contains invalid manifest data.");
+                    }
 
-                GameProjectValidationResult validation = GameProjectManifestValidator.Validate(manifest);
-                if (!validation.IsValid)
-                    return Failure(GameProjectError.InvalidData,
-                        "The current revision failed publication validation: " + string.Join(" ", validation.Errors));
+                    GameProjectValidationResult validation = GameProjectManifestValidator.Validate(manifest);
+                    if (!validation.IsValid)
+                        return Failure(GameProjectError.InvalidData,
+                            "The current revision failed publication validation: " + string.Join(" ", validation.Errors));
+                }
 
                 if (!m_Database.PublishProject(projectID, authenticatedOwnerID,
                     expectedCurrentRevision, current.UpdatedUTC, DateTime.UtcNow))
