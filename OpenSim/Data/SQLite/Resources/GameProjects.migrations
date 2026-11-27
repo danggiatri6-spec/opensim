@@ -23,3 +23,91 @@ CREATE TABLE GameProjectRevisions (
     PRIMARY KEY (ProjectID, Revision),
     FOREIGN KEY (ProjectID) REFERENCES GameProjects(ProjectID) ON DELETE CASCADE
 );
+
+:VERSION 2
+CREATE TABLE GameExperiences (
+    ProjectID TEXT NOT NULL,
+    ExperienceID TEXT NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    UpdatedUTC TEXT NOT NULL,
+    PRIMARY KEY (ProjectID, ExperienceID),
+    UNIQUE (ExperienceID),
+    FOREIGN KEY (ProjectID) REFERENCES GameProjects(ProjectID) ON DELETE RESTRICT
+);
+
+CREATE TABLE GamePlaces (
+    ProjectID TEXT NOT NULL,
+    ExperienceID TEXT NOT NULL,
+    PlaceID TEXT NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    UpdatedUTC TEXT NOT NULL,
+    PRIMARY KEY (ProjectID, ExperienceID, PlaceID),
+    UNIQUE (PlaceID),
+    FOREIGN KEY (ProjectID, ExperienceID)
+        REFERENCES GameExperiences(ProjectID, ExperienceID) ON DELETE RESTRICT
+);
+
+CREATE TABLE GamePlaceRevisions (
+    ProjectID TEXT NOT NULL,
+    ExperienceID TEXT NOT NULL,
+    PlaceID TEXT NOT NULL,
+    Revision INTEGER NOT NULL,
+    SchemaVersion INTEGER NOT NULL,
+    Name TEXT NOT NULL,
+    Description TEXT NOT NULL,
+    DefinitionJson TEXT NOT NULL,
+    CreatedBy TEXT NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    PRIMARY KEY (ProjectID, ExperienceID, PlaceID, Revision),
+    FOREIGN KEY (ProjectID, ExperienceID, PlaceID)
+        REFERENCES GamePlaces(ProjectID, ExperienceID, PlaceID) ON DELETE RESTRICT
+);
+
+CREATE TABLE GameExperienceRevisions (
+    ProjectID TEXT NOT NULL,
+    ExperienceID TEXT NOT NULL,
+    Revision INTEGER NOT NULL,
+    SchemaVersion INTEGER NOT NULL,
+    Name TEXT NOT NULL,
+    StartPlaceID TEXT NOT NULL,
+    CreatedBy TEXT NOT NULL,
+    CreatedUTC TEXT NOT NULL,
+    PRIMARY KEY (ProjectID, ExperienceID, Revision),
+    FOREIGN KEY (ProjectID, ExperienceID)
+        REFERENCES GameExperiences(ProjectID, ExperienceID) ON DELETE RESTRICT
+);
+
+CREATE TABLE GameExperienceRevisionPlaces (
+    ProjectID TEXT NOT NULL,
+    ExperienceID TEXT NOT NULL,
+    ExperienceRevision INTEGER NOT NULL,
+    PlaceID TEXT NOT NULL,
+    PlaceRevision INTEGER NOT NULL,
+    SortOrder INTEGER NOT NULL,
+    PRIMARY KEY (ProjectID, ExperienceID, ExperienceRevision, PlaceID),
+    UNIQUE (ProjectID, ExperienceID, ExperienceRevision, SortOrder),
+    FOREIGN KEY (ProjectID, ExperienceID, ExperienceRevision)
+        REFERENCES GameExperienceRevisions(ProjectID, ExperienceID, Revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ProjectID, ExperienceID, PlaceID, PlaceRevision)
+        REFERENCES GamePlaceRevisions(ProjectID, ExperienceID, PlaceID, Revision) ON DELETE RESTRICT
+);
+
+CREATE TABLE GameProjectRevisionExperiences (
+    ProjectID TEXT NOT NULL,
+    ProjectRevision INTEGER NOT NULL,
+    ExperienceID TEXT NOT NULL,
+    ExperienceRevision INTEGER NOT NULL,
+    SortOrder INTEGER NOT NULL,
+    PRIMARY KEY (ProjectID, ProjectRevision, ExperienceID),
+    UNIQUE (ProjectID, ProjectRevision, SortOrder),
+    FOREIGN KEY (ProjectID, ProjectRevision)
+        REFERENCES GameProjectRevisions(ProjectID, Revision) ON DELETE RESTRICT,
+    FOREIGN KEY (ProjectID, ExperienceID, ExperienceRevision)
+        REFERENCES GameExperienceRevisions(ProjectID, ExperienceID, Revision) ON DELETE RESTRICT
+);
+
+CREATE INDEX IX_GameExperiences_Project ON GameExperiences(ProjectID);
+CREATE INDEX IX_GamePlaces_Experience ON GamePlaces(ProjectID, ExperienceID);
+CREATE INDEX IX_GamePlaceRevisions_Lookup ON GamePlaceRevisions(ProjectID, ExperienceID, PlaceID, Revision);
+CREATE INDEX IX_GameExperienceRevisions_Lookup ON GameExperienceRevisions(ProjectID, ExperienceID, Revision);
+CREATE INDEX IX_GameProjectRevisionExperiences_Experience ON GameProjectRevisionExperiences(ProjectID, ExperienceID, ExperienceRevision);
