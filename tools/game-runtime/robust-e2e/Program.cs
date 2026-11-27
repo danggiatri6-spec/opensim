@@ -54,6 +54,18 @@ Assembly sqliteAssembly = Assembly.LoadFrom(sqliteAssemblyPath);
 Type sqliteAuthType = sqliteAssembly.GetType("OpenSim.Data.SQLite.SQLiteAuthenticationData", true)!;
 Assert(typeof(IAuthenticationData).IsAssignableFrom(sqliteAuthType),
     "production SQLiteAuthenticationData implements the host storage interface");
+
+Type sqliteProjectType = sqliteAssembly.GetType("OpenSim.Data.SQLite.SQLiteGameProjectData", true)!;
+Assert(typeof(IGameProjectData).IsAssignableFrom(sqliteProjectType),
+    "production SQLiteGameProjectData implements the host game-project storage interface");
+try
+{
+    _ = Activator.CreateInstance(sqliteProjectType, new object[] { connection });
+}
+catch (Exception exception)
+{
+    throw new InvalidOperationException("Could not initialize production SQLite game-project storage.", exception);
+}
 try
 {
     _ = Activator.CreateInstance(sqliteAuthType, new object[] { connection, "auth" });
