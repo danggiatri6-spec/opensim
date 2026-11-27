@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.Net;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using OpenMetaverse;
 using OpenSim.Framework.Servers.HttpServer;
 using OpenSim.GameRuntime;
@@ -52,8 +53,13 @@ internal static class GameCreatorApiHandlerTests
             "valid Creator request passes only the token-authenticated principal to Game Runtime");
 
         UUID selectedExperience = UUID.Random();
-        FakeRequest selected = Request("POST", "/creator/instances",
-            "{\\"project_id\\":\\"" + project + "\\",\\"revision\\":1,\\"experience_id\\":\\"" + selectedExperience + "\\"}", creator);
+        string selectedJson = JsonSerializer.Serialize(new
+        {
+            project_id = project.ToString(),
+            revision = 1,
+            experience_id = selectedExperience.ToString()
+        });
+        FakeRequest selected = Request("POST", "/creator/instances", selectedJson, creator);
         FakeResponse selectedResponse = new();
         handler.Handle("/creator/instances", selected.InputStream, selected, selectedResponse);
         Assert(selectedResponse.StatusCode == 201 && runtime.StartCalls == 2
