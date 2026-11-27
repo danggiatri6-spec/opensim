@@ -6,6 +6,7 @@ using System.Text.Json.Serialization.Metadata;
 using OpenMetaverse;
 using OpenSim.Framework.Servers.HttpServer;
 using OpenSim.Services.Interfaces;
+using OpenSim.Services.UserAccountService;
 
 namespace OpenSim.GameRuntime;
 
@@ -19,16 +20,21 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
     private readonly GameCreatorRequestAuthenticator _authenticator;
     private readonly IGameProjectService _projects;
     private readonly GameCreatorRequestRateLimiter _rateLimiter;
+    private readonly GameCreatorExperienceApiHandler? _experienceApi;
     private readonly JsonSerializerOptions _jsonOptions = CreateJsonOptions();
     private static readonly JsonSerializerOptions ResponseJsonOptions = CreateJsonOptions();
 
     public GameCreatorProjectsApiHandler(string method, GameCreatorRequestAuthenticator authenticator,
-        IGameProjectService projects, GameCreatorRequestRateLimiter? rateLimiter = null)
+        IGameProjectService projects, GameCreatorRequestRateLimiter? rateLimiter = null,
+        GameExperienceService? experienceService = null, GameProjectV2Service? projectV2Service = null)
         : base(method, "/creator/projects")
     {
         _authenticator = authenticator ?? throw new ArgumentNullException(nameof(authenticator));
         _projects = projects ?? throw new ArgumentNullException(nameof(projects));
         _rateLimiter = rateLimiter ?? new GameCreatorRequestRateLimiter();
+        if (experienceService is not null && projectV2Service is not null)
+            _experienceApi = new GameCreatorExperienceApiHandler(method, authenticator,
+                experienceService, projectV2Service, _rateLimiter);
     }
 
     public override string ContentType => "application/json";
@@ -55,6 +61,14 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
         }
 
         string[] segments = request.UriPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length >= 4 && segments[0] == "creator" && segments[1] == "projects"
+            && (segments[3] == "experiences"
+                || (segments[3] == "revisions" && segments.Length == 5 && segments[4] == "v2")))
+        {
+            if (_experienceApi is null)
+                return Reply(response, HttpStatusCode.NotFound, new { error = "not_found" });
+            return _experienceApi.ProcessAuthenticatedRequest(requestData, request, response, owner);
+        }
         if (segments.Length < 2 || segments[0] != "creator" || segments[1] != "projects")
             return Reply(response, HttpStatusCode.NotFound, new { error = "not_found" });
 
