@@ -102,6 +102,13 @@ namespace OpenSim.Services.Interfaces
         public GameSettings Settings { get; set; } = new();
     }
 
+    public sealed class GameProjectExperienceRevision
+    {
+        public UUID ExperienceID { get; set; }
+        public long ExperienceRevision { get; set; }
+        public int SortOrder { get; set; }
+    }
+
     /// <summary>
     /// Immutable snapshot created when a draft is saved.
     /// </summary>
@@ -111,6 +118,7 @@ namespace OpenSim.Services.Interfaces
         public long Revision { get; set; }
         public int SchemaVersion { get; set; }
         public string ManifestJson { get; set; } = string.Empty;
+        public List<GameProjectExperienceRevision> Experiences { get; set; } = new();
         public UUID CreatedBy { get; set; }
         public DateTime CreatedUTC { get; set; }
     }
