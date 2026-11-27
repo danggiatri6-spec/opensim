@@ -42,6 +42,7 @@ var options = new GameRuntimeOptions
 };
 var v2Projects = new FakeProjectService(owner, projectId, worldId);
 v2Projects.Revision.SchemaVersion = 2;
+v2Projects.RuntimeExperienceID = UUID.Random();
 v2Projects.RuntimeWorld = new GameWorldDefinition
 {
     WorldID = worldId,
@@ -52,9 +53,12 @@ v2Projects.RuntimeWorld = new GameWorldDefinition
 var v2Workers = new FakeWorkerFactory();
 await using (var v2Runtime = new GameRuntimeService(v2Projects, v2Workers, options))
 {
-    GameInstanceResult v2Started = await v2Runtime.StartInstanceAsync(owner, projectId, 1);
-    Assert(v2Started.Success && v2Projects.LastResolvedRevision == 1,
-        "v2 Game Instance resolves the exact requested immutable project revision");
+    GameInstanceResult v2Started = await v2Runtime.StartInstanceAsync(
+        owner, projectId, 1, v2Projects.RuntimeExperienceID);
+    Assert(v2Started.Success && v2Projects.LastResolvedRevision == 1
+        && v2Projects.LastResolvedExperienceID == v2Projects.RuntimeExperienceID
+        && v2Started.Instance?.ExperienceID == v2Projects.RuntimeExperienceID,
+        "v2 Game Instance resolves the exact requested project and Experience revisions");
     Assert(v2Workers.Sessions.Count == 1
         && v2Workers.Sessions[0].LastConfiguration.GetProperty("worldName").GetString() == "Pinned v2 World",
         "v2 runtime resolver supplies the Place world definition to the Worker");
@@ -166,12 +170,25 @@ sealed class FakeProjectService : IGameProjectService, IGameProjectRuntimeDefini
     public GameProject? SecondProject { get; private set; }
     public GameProjectRevision? SecondRevision { get; private set; }
     public GameWorldDefinition? RuntimeWorld { get; set; }
+    public UUID RuntimeExperienceID { get; set; }
     public long LastResolvedRevision { get; private set; }
+    public UUID LastResolvedExperienceID { get; private set; }
     public GameWorldDefinition? ResolveRuntimeWorld(UUID owner, UUID project, long revision)
     {
         LastResolvedRevision = revision;
         return owner == Project.OwnerID && project == Project.ProjectID
             && revision == Revision.Revision && Revision.SchemaVersion == 2 ? RuntimeWorld : null;
+    }
+    public GameRuntimeWorldDefinition? ResolveRuntimeDefinition(
+        UUID owner, UUID project, long revision, UUID experienceID)
+    {
+        LastResolvedRevision = revision;
+        LastResolvedExperienceID = experienceID;
+        return owner == Project.OwnerID && project == Project.ProjectID
+            && revision == Revision.Revision && Revision.SchemaVersion == 2
+            && (experienceID == UUID.Zero || experienceID == RuntimeExperienceID)
+            ? new GameRuntimeWorldDefinition { ExperienceID = RuntimeExperienceID, World = RuntimeWorld! }
+            : null;
     }
     public FakeProjectService(UUID owner, UUID project, UUID world)
     {
