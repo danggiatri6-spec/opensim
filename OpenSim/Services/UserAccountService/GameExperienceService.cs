@@ -23,9 +23,9 @@ namespace OpenSim.Services.UserAccountService
             m_Database = database ?? throw new ArgumentNullException(nameof(database));
         }
 
-        public GameExperienceData CreateExperience(UUID ownerID, UUID projectID, string name)
+        public GameExperienceData CreateExperience(UUID ownerID, UUID projectID)
         {
-            if (ownerID == UUID.Zero || projectID == UUID.Zero || !ValidText(name, 1, 80))
+            if (ownerID == UUID.Zero || projectID == UUID.Zero)
                 return null;
             if (!TryGetDraftProject(ownerID, projectID))
                 return null;
