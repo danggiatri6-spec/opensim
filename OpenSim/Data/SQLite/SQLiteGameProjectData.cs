@@ -206,6 +206,32 @@ FROM GameProjectRevisions WHERE ProjectID = @ProjectID AND Revision = @Revision"
             }
         }
 
+        public bool PublishProject(UUID projectID, UUID ownerID, long expectedCurrentRevision,
+            DateTime expectedUpdatedUTC, DateTime updatedUTC)
+        {
+            if (projectID == UUID.Zero || ownerID == UUID.Zero || expectedCurrentRevision < 1)
+                return false;
+
+            using (SQLiteConnection connection = OpenConnection())
+            using (SQLiteCommand command = connection.CreateCommand())
+            {
+                command.CommandText = @"UPDATE GameProjects
+SET Status = 1, UpdatedUTC = @UpdatedUTC
+WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID
+  AND Status = 0 AND CurrentRevision = @ExpectedRevision
+  AND UpdatedUTC = @ExpectedUpdatedUTC
+  AND EXISTS (SELECT 1 FROM GameProjectRevisions
+              WHERE GameProjectRevisions.ProjectID = GameProjects.ProjectID
+                AND GameProjectRevisions.Revision = GameProjects.CurrentRevision)";
+                command.Parameters.AddWithValue("@UpdatedUTC", FormatDate(updatedUTC));
+                command.Parameters.AddWithValue("@ProjectID", projectID.ToString());
+                command.Parameters.AddWithValue("@OwnerID", ownerID.ToString());
+                command.Parameters.AddWithValue("@ExpectedRevision", expectedCurrentRevision);
+                command.Parameters.AddWithValue("@ExpectedUpdatedUTC", FormatDate(expectedUpdatedUTC));
+                return command.ExecuteNonQuery() == 1;
+            }
+        }
+
         public bool ArchiveProject(UUID projectID, UUID ownerID, DateTime updatedUTC)
         {
             using (SQLiteConnection connection = OpenConnection())
