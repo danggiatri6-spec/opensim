@@ -34,7 +34,7 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
         _rateLimiter = rateLimiter ?? new GameCreatorRequestRateLimiter();
         if (experienceService is not null && projectV2Service is not null)
             _experienceApi = new GameCreatorExperienceApiHandler(method, authenticator,
-                experienceService, projectV2Service, _rateLimiter);
+                projects, experienceService, projectV2Service, _rateLimiter);
     }
 
     public override string ContentType => "application/json";
