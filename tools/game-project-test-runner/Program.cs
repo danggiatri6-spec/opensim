@@ -251,9 +251,6 @@ try
     var graphRefs = (IList)Get(graphRevisionRead, "Experiences")!;
     Assert(graphRefs.Count == 1 && Equals(Get(graphRefs[0]!, "ExperienceRevision"), 1L),
         "v2 project revision reads back its exact Experience revision pin");
-    Assert((bool)Call(provider, "PublishProject", graphProjectId, owner, 1L,
-        (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow)!,
-        "v2 project publishes only after its immutable Experience graph is pinned");
 
     var runtimeServicesAssembly = Load("OpenSim.Services.UserAccountService");
     var runtimeProjectServiceType = runtimeServicesAssembly.GetType(
@@ -277,6 +274,10 @@ try
         new[] { owner, graphProjectId, (object)1L })!;
     Assert((string)Get(resolvedAfterPlaceUpdate, "Name")! == "Pinned World",
         "runtime resolver continues using the project's pinned Place revision after a newer Place revision is saved");
+
+    Assert((bool)Call(provider, "PublishProject", graphProjectId, owner, 1L,
+        (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow)!,
+        "v2 project publishes only after its immutable Experience graph is pinned");
 
     var missingGraphProjectId = U("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
     var missingGraphProject = New("OpenSim.Data.GameProjectData", dataAssembly);
