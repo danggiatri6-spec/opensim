@@ -60,13 +60,38 @@ Assert(typeof(IAuthenticationData).IsAssignableFrom(sqliteAuthType),
 Type sqliteProjectType = sqliteAssembly.GetType("OpenSim.Data.SQLite.SQLiteGameProjectData", true)!;
 Assert(typeof(IGameProjectData).IsAssignableFrom(sqliteProjectType),
     "production SQLiteGameProjectData implements the host game-project storage interface");
+object sqliteProjectProvider;
 try
 {
-    _ = Activator.CreateInstance(sqliteProjectType, new object[] { connection });
+    sqliteProjectProvider = Activator.CreateInstance(sqliteProjectType, new object[] { connection })!;
 }
 catch (Exception exception)
 {
     throw new InvalidOperationException("Could not initialize production SQLite game-project storage.", exception);
+}
+
+var storageProbe = new GameProjectData
+{
+    ProjectID = UUID.Random(),
+    OwnerID = UUID.Random(),
+    Name = "SQLite provider write probe",
+    Description = "Verifies the exact production provider can write to the E2E database.",
+    Status = (int)GameProjectStatus.Draft,
+    SchemaVersion = GameProjectManifestValidator.CurrentSchemaVersion,
+    CurrentRevision = 0,
+    CreatedUTC = DateTime.UtcNow,
+    UpdatedUTC = DateTime.UtcNow
+};
+try
+{
+    bool stored = (bool)sqliteProjectType.GetMethod("CreateProject")!.Invoke(
+        sqliteProjectProvider, new object[] { storageProbe })!;
+    Assert(stored, "production SQLite game-project provider inserts a project before HTTP startup");
+}
+catch (TargetInvocationException exception)
+{
+    throw new InvalidOperationException("Production SQLite game-project provider write probe failed.",
+        exception.InnerException ?? exception);
 }
 try
 {
