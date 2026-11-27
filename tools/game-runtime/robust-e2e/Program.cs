@@ -49,6 +49,7 @@ projectConfig.Set("ConnectionString", connection);
 
 string authModule = config.Configs["AuthenticationService"]!.GetString("LocalServiceModule");
 IAuthenticationService auth = ServerUtils.LoadPlugin<IAuthenticationService>(authModule, new object[] { config });
+Assert(auth is not null, "production WebkeyAuthenticationService plugin loads with its SQLite dependencies");
 UUID principal = UUID.Random();
 string webKey = UUID.Random().ToString();
 Assert(auth.SetAuthInfo(new AuthInfo
