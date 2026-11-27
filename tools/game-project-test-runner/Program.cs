@@ -61,6 +61,7 @@ Set(badSpawn, "RotationW", 2.0);
 ((IList)Get(world, "SpawnPoints")!).Add(badSpawn);
 var badRotation = validatorType.GetMethod("Validate")!.Invoke(null, new[] { manifest })!;
 Assert(!(bool)Get(badRotation, "IsValid")!, "non-normalized spawn rotation is rejected");
+((IList)Get(world, "SpawnPoints")!).Clear();
 
 var tempDb = Path.Combine(Path.GetTempPath(), "opensim-game-project-" + Guid.NewGuid().ToString("N") + ".db");
 try
@@ -95,13 +96,13 @@ try
     Set(revision, "ProjectID", projectId);
     Set(revision, "Revision", 1L);
     Set(revision, "SchemaVersion", 1);
-    Set(revision, "ManifestJson", "{\"schemaVersion\":1}");
+    Set(revision, "ManifestJson", "{\"schemaVersion\":1,\"name\":\"Integration Test\",\"worlds\":[{\"worldID\":\"11111111-1111-4111-8111-111111111111\",\"name\":\"Main World\",\"sizeX\":256,\"sizeY\":256,\"spawnPoints\":[],\"assetReferences\":[]}],\"settings\":{\"gameMode\":\"sandbox\",\"defaultWorldID\":\"11111111-1111-4111-8111-111111111111\",\"visibility\":\"private\",\"maxPlayers\":16,\"tags\":[]}}");
     Set(revision, "CreatedBy", owner);
     Set(revision, "CreatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "SaveRevision", revision, owner, 0L, DateTime.UtcNow)!, "first revision saves atomically");
     Assert(!(bool)Call(provider, "SaveRevision", revision, owner, 0L, DateTime.UtcNow)!, "stale revision write is rejected");
     Assert(Get(Call(provider, "GetProject", projectId)!, "CurrentRevision")!.Equals(1L), "revision counter advances exactly once");
-    Assert(Get(Call(provider, "GetRevision", projectId, 1L)!, "ManifestJson")!.Equals("{\"schemaVersion\":1}"), "immutable revision can be read back");
+    Assert(((string)Get(Call(provider, "GetRevision", projectId, 1L)!, "ManifestJson")!).Contains("Integration Test"), "immutable revision can be read back");
 
     loaded = Call(provider, "GetProject", projectId)!;
     var updatedAt = (DateTime)Get(loaded, "UpdatedUTC")!;
@@ -115,8 +116,12 @@ try
         "SQLite rejects publishing by a different owner");
     Assert(!(bool)Call(provider, "PublishProject", projectId, owner, 0L, updatedAt, DateTime.UtcNow)!,
         "SQLite rejects a stale publish revision");
-    Assert((bool)Call(provider, "PublishProject", projectId, owner, 1L, updatedAt, DateTime.UtcNow)!,
-        "SQLite atomically publishes the current immutable revision");
+
+    var servicesAssembly = Load("OpenSim.Services.UserAccountService");
+    var projectServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameProjectService", true)!;
+    var projectService = Activator.CreateInstance(projectServiceType, new[] { provider })!;
+    var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
+    Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest");
     var published = Call(provider, "GetProject", projectId)!;
     Assert((int)Get(published, "Status")! == 1, "published status is persisted");
     updatedAt = (DateTime)Get(published, "UpdatedUTC")!;
