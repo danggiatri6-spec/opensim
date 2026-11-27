@@ -172,6 +172,9 @@ try
     var published = Call(provider, "GetProject", projectId)!;
     Assert((int)Get(published, "Status")! == 1, "published status is persisted");
     updatedAt = (DateTime)Get(published, "UpdatedUTC")!;
+    Assert(!(bool)Call(provider, "UpdateProjectMetadata", projectId, owner, 1L, updatedAt,
+        "Published mutation", "", DateTime.UtcNow)!,
+        "SQLite prevents metadata mutation after publication");
     Assert(!(bool)Call(provider, "PublishProject", projectId, owner, 1L, updatedAt, DateTime.UtcNow)!,
         "repeated publish is rejected because only Draft can transition");
     Assert(!(bool)Call(provider, "SaveRevision", revision, owner, 1L, DateTime.UtcNow)!,
