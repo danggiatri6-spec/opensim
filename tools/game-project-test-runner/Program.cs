@@ -231,11 +231,9 @@ try
     Set(graphExperienceRevision, "Revision", 1L); Set(graphExperienceRevision, "SchemaVersion", 1);
     Set(graphExperienceRevision, "Name", "Pinned Experience"); Set(graphExperienceRevision, "StartPlaceID", graphPlaceId);
     Set(graphExperienceRevision, "CreatedBy", owner); Set(graphExperienceRevision, "CreatedUTC", DateTime.UtcNow);
-    ((IList)Get(graphExperienceRevision, "Places")!).Add(membership);
     // Use a membership object scoped to this graph's Place ID.
     var graphMembership = Activator.CreateInstance(membershipType)!;
     Set(graphMembership, "PlaceID", graphPlaceId); Set(graphMembership, "PlaceRevision", 1L); Set(graphMembership, "SortOrder", 0);
-    ((IList)Get(graphExperienceRevision, "Places")!).Clear();
     ((IList)Get(graphExperienceRevision, "Places")!).Add(graphMembership);
     Assert((bool)Call(provider, "SaveExperienceRevision", graphExperienceRevision, owner, 0L, DateTime.UtcNow)!, "v2 graph Experience revision pins its Place revision");
 
@@ -254,7 +252,7 @@ try
     Assert(graphRefs.Count == 1 && Equals(Get(graphRefs[0]!, "ExperienceRevision"), 1L),
         "v2 project revision reads back its exact Experience revision pin");
     Assert((bool)Call(provider, "PublishProject", graphProjectId, owner, 1L,
-        (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow),
+        (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow)!,
         "v2 project publishes only after its immutable Experience graph is pinned");
 
     var missingGraphProjectId = U("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
