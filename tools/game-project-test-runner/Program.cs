@@ -327,6 +327,36 @@ try
         serviceExperienceId, 1L) == null,
         "GameExperienceService does not disclose Experience revisions to another owner");
 
+    var projectV2ServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameProjectV2Service", true)!;
+    var projectV2Service = Activator.CreateInstance(projectV2ServiceType, new[] { provider })!;
+    var projectExperiencePinType = dataAssembly.GetType("OpenSim.Data.GameProjectExperienceRevisionData", true)!;
+    var projectExperiencePinListType = typeof(List<>).MakeGenericType(projectExperiencePinType);
+    var projectExperiencePins = (IList)Activator.CreateInstance(projectExperiencePinListType)!;
+    var projectExperiencePin = Activator.CreateInstance(projectExperiencePinType)!;
+    Set(projectExperiencePin, "ExperienceID", serviceExperienceId);
+    Set(projectExperiencePin, "ExperienceRevision", 1L);
+    Set(projectExperiencePin, "SortOrder", 0);
+    projectExperiencePins.Add(projectExperiencePin);
+    Assert((bool)Call(projectV2Service, "SaveDraftRevision", owner, serviceProjectId, 0L,
+        "{\\"schemaVersion\\":2}", projectExperiencePins)!,
+        "GameProjectV2Service saves a v2 project revision with an exact Experience revision pin");
+    var savedV2Project = Call(provider, "GetProject", serviceProjectId)!;
+    Assert((long)Get(savedV2Project, "CurrentRevision")! == 1L
+        && (int)Get(savedV2Project, "SchemaVersion")! == 2,
+        "v2 revision advances project revision and schema version atomically");
+    var savedV2Revision = Call(provider, "GetRevision", serviceProjectId, 1L)!;
+    var savedV2Pins = (IList)Get(savedV2Revision, "Experiences")!;
+    Assert(savedV2Pins.Count == 1
+        && Equals(Get(savedV2Pins[0]!, "ExperienceID"), serviceExperienceId)
+        && Equals(Get(savedV2Pins[0]!, "ExperienceRevision"), 1L),
+        "SQLite reads back the exact immutable Experience pin from the v2 project revision");
+    Assert(!(bool)Call(projectV2Service, "SaveDraftRevision", otherOwner, serviceProjectId, 1L,
+        "{\\"schemaVersion\\":2}", projectExperiencePins)!,
+        "GameProjectV2Service rejects a project revision write by a different owner");
+    Assert(!(bool)Call(projectV2Service, "SaveDraftRevision", owner, serviceProjectId, 0L,
+        "{\\"schemaVersion\\":2}", projectExperiencePins)!,
+        "GameProjectV2Service rejects a stale project revision compare-and-swap");
+
     var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
     Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest; error=" + Get(publishResult, "Error") + "; message=" + Get(publishResult, "Message"));
     var foreignPublish = Call(projectService, "PublishProject", otherOwner, projectId, 1L)!;
