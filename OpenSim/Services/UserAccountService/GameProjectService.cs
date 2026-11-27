@@ -295,6 +295,8 @@ namespace OpenSim.Services.UserAccountService
                     return Failure(GameProjectError.NotFound, "Project was not found.");
                 if (current.Status != (int)GameProjectStatus.Draft)
                     return Failure(GameProjectError.RevisionConflict, "Only draft projects can be published; reload the project state.");
+                if (current.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion)
+                    return Failure(GameProjectError.InvalidData, "The project schema version is not supported.");
                 if (current.CurrentRevision != expectedCurrentRevision)
                     return Failure(GameProjectError.RevisionConflict, "Project revision has changed. Reload before publishing.");
 
