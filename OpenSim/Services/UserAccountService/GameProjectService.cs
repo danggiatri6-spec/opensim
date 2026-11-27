@@ -19,7 +19,7 @@ using OpenSim.Services.Interfaces;
 
 namespace OpenSim.Services.UserAccountService
 {
-    public sealed class GameProjectService : ServiceBase, IGameProjectService
+    public sealed class GameProjectService : ServiceBase, IGameProjectService, IGameProjectRuntimeDefinitionService
     {
         private static readonly ILog m_log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
         private const int MaximumPageSize = 100;
@@ -377,6 +377,81 @@ namespace OpenSim.Services.UserAccountService
             catch
             {
                 return Failure(GameProjectError.StorageUnavailable, "Project storage is unavailable.");
+            }
+        }
+
+        /// <summary>
+        /// Resolves the v2 runtime start world only from the immutable graph pinned
+        /// by the requested project revision. The initial runtime contract deliberately
+        /// requires exactly one Experience until an explicit Experience selector exists.
+        /// </summary>
+        public GameWorldDefinition ResolveRuntimeWorld(UUID authenticatedOwnerID, UUID projectID, long projectRevision)
+        {
+            if (authenticatedOwnerID == UUID.Zero || projectID == UUID.Zero || projectRevision < 1)
+                return null;
+
+            try
+            {
+                GameProjectData project = m_Database.GetProject(projectID);
+                if (project == null || project.OwnerID != authenticatedOwnerID
+                    || project.Status != (int)GameProjectStatus.Published)
+                    return null;
+
+                GameProjectRevisionData revision = m_Database.GetRevision(projectID, projectRevision);
+                if (revision == null || revision.ProjectID != projectID
+                    || revision.Revision != projectRevision || revision.CreatedBy != authenticatedOwnerID
+                    || revision.SchemaVersion != GameProjectV2Service.SchemaVersion
+                    || revision.Experiences == null || revision.Experiences.Count != 1)
+                    return null;
+
+                GameProjectV2Service v2 = new GameProjectV2Service(m_Database);
+                if (!v2.ValidateRevisionGraph(authenticatedOwnerID, projectID, revision))
+                    return null;
+
+                GameProjectExperienceRevisionData experiencePin = revision.Experiences[0];
+                GameExperienceRevisionData experience = m_Database.GetExperienceRevision(
+                    projectID, experiencePin.ExperienceID, experiencePin.ExperienceRevision);
+                if (experience == null || experience.CreatedBy != authenticatedOwnerID
+                    || experience.Places == null || experience.Places.Count == 0)
+                    return null;
+
+                GameExperiencePlaceRevisionData startPin = experience.Places.Find(
+                    x => x != null && x.PlaceID == experience.StartPlaceID);
+                if (startPin == null)
+                    return null;
+
+                GamePlaceRevisionData placeRevision = m_Database.GetPlaceRevision(
+                    projectID, experiencePin.ExperienceID, startPin.PlaceID, startPin.PlaceRevision);
+                if (placeRevision == null || placeRevision.CreatedBy != authenticatedOwnerID
+                    || placeRevision.SchemaVersion != 1
+                    || string.IsNullOrWhiteSpace(placeRevision.DefinitionJson)
+                    || placeRevision.DefinitionJson.Length > GameProjectManifestValidator.MaximumManifestCharacters)
+                    return null;
+
+                JsonSerializerOptions options = new JsonSerializerOptions();
+                options.Converters.Add(new OpenMetaverseUuidJsonConverter());
+                GameWorldDefinition world = JsonSerializer.Deserialize<GameWorldDefinition>(
+                    placeRevision.DefinitionJson, options);
+                if (world == null || world.WorldID != startPin.PlaceID)
+                    return null;
+
+                GameProjectManifest validationManifest = new GameProjectManifest
+                {
+                    SchemaVersion = GameProjectManifestValidator.CurrentSchemaVersion,
+                    Name = experience.Name,
+                    Worlds = new List<GameWorldDefinition> { world },
+                    Settings = new GameSettings
+                    {
+                        DefaultWorldID = world.WorldID,
+                        MaxPlayers = 16,
+                        Visibility = "private"
+                    }
+                };
+                return GameProjectManifestValidator.Validate(validationManifest).IsValid ? world : null;
+            }
+            catch
+            {
+                return null;
             }
         }
 
