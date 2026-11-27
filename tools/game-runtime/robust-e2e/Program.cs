@@ -46,7 +46,7 @@ authConfig.Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSi
 authConfig.Set("ConnectionString", connection);
 authConfig.Set("Realm", "auth");
 IConfig projectConfig = config.AddConfig("GameProjectService");
-projectConfig.Set("StorageProvider", "OpenSim.Data.SQLite.dll:SQLiteGameProjectData");
+projectConfig.Set("StorageProvider", Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll") + ":SQLiteGameProjectData");
 projectConfig.Set("ConnectionString", connection);
 
 string sqliteAssemblyPath = Path.Combine(AppContext.BaseDirectory, "OpenSim.Data.SQLite.dll");
