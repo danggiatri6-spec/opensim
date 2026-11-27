@@ -237,6 +237,36 @@ try
     ((IList)Get(graphExperienceRevision, "Places")!).Add(graphMembership);
     Assert((bool)Call(provider, "SaveExperienceRevision", graphExperienceRevision, owner, 0L, DateTime.UtcNow)!, "v2 graph Experience revision pins its Place revision");
 
+    var secondGraphExperienceId = U("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee");
+    var secondGraphPlaceId = U("ffffffff-ffff-4fff-8fff-ffffffffffff");
+    var secondGraphExperience = New("OpenSim.Data.GameExperienceData", dataAssembly);
+    Set(secondGraphExperience, "ProjectID", graphProjectId); Set(secondGraphExperience, "ExperienceID", secondGraphExperienceId);
+    Set(secondGraphExperience, "CreatedUTC", DateTime.UtcNow); Set(secondGraphExperience, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateExperience", secondGraphExperience, owner)!, "second Experience identity is created for multi-Experience runtime selection");
+    var secondGraphPlace = New("OpenSim.Data.GamePlaceData", dataAssembly);
+    Set(secondGraphPlace, "ProjectID", graphProjectId); Set(secondGraphPlace, "ExperienceID", secondGraphExperienceId);
+    Set(secondGraphPlace, "PlaceID", secondGraphPlaceId); Set(secondGraphPlace, "CreatedUTC", DateTime.UtcNow);
+    Set(secondGraphPlace, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreatePlace", secondGraphPlace, owner)!, "second Experience receives its own Place");
+    var secondGraphPlaceRevision = New("OpenSim.Data.GamePlaceRevisionData", dataAssembly);
+    Set(secondGraphPlaceRevision, "ProjectID", graphProjectId); Set(secondGraphPlaceRevision, "ExperienceID", secondGraphExperienceId);
+    Set(secondGraphPlaceRevision, "PlaceID", secondGraphPlaceId); Set(secondGraphPlaceRevision, "Revision", 1L);
+    Set(secondGraphPlaceRevision, "SchemaVersion", 1); Set(secondGraphPlaceRevision, "Name", "Secondary Place");
+    Set(secondGraphPlaceRevision, "Description", "");
+    Set(secondGraphPlaceRevision, "DefinitionJson", @"{""WorldID"":""ffffffff-ffff-4fff-8fff-ffffffffffff"",""Name"":""Secondary World"",""Description"":"""",""SizeX"":256,""SizeY"":256,""SpawnPoints"":[],""AssetReferences"":[]}");
+    Set(secondGraphPlaceRevision, "CreatedBy", owner); Set(secondGraphPlaceRevision, "CreatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "SavePlaceRevision", secondGraphPlaceRevision, owner, 0L, DateTime.UtcNow)!, "second Experience Place revision saves");
+    var secondGraphExperienceRevision = New("OpenSim.Data.GameExperienceRevisionData", dataAssembly);
+    Set(secondGraphExperienceRevision, "ProjectID", graphProjectId); Set(secondGraphExperienceRevision, "ExperienceID", secondGraphExperienceId);
+    Set(secondGraphExperienceRevision, "Revision", 1L); Set(secondGraphExperienceRevision, "SchemaVersion", 1);
+    Set(secondGraphExperienceRevision, "Name", "Secondary Experience"); Set(secondGraphExperienceRevision, "StartPlaceID", secondGraphPlaceId);
+    Set(secondGraphExperienceRevision, "CreatedBy", owner); Set(secondGraphExperienceRevision, "CreatedUTC", DateTime.UtcNow);
+    var secondGraphMembership = Activator.CreateInstance(membershipType)!;
+    Set(secondGraphMembership, "PlaceID", secondGraphPlaceId); Set(secondGraphMembership, "PlaceRevision", 1L); Set(secondGraphMembership, "SortOrder", 0);
+    ((IList)Get(secondGraphExperienceRevision, "Places")!).Add(secondGraphMembership);
+    Assert((bool)Call(provider, "SaveExperienceRevision", secondGraphExperienceRevision, owner, 0L, DateTime.UtcNow)!,
+        "second Experience revision pins its own Start Place");
+
     var graphRevision = New("OpenSim.Data.GameProjectRevisionData", dataAssembly);
     Set(graphRevision, "ProjectID", graphProjectId); Set(graphRevision, "Revision", 1L);
     Set(graphRevision, "SchemaVersion", 2); Set(graphRevision, "ManifestJson", "{\"SchemaVersion\":2}");
@@ -246,10 +276,15 @@ try
     Set(projectExperienceRef, "ExperienceID", graphExperienceId);
     Set(projectExperienceRef, "ExperienceRevision", 1L); Set(projectExperienceRef, "SortOrder", 0);
     ((IList)Get(graphRevision, "Experiences")!).Add(projectExperienceRef);
-    Assert((bool)Call(provider, "SaveRevision", graphRevision, owner, 0L, DateTime.UtcNow)!, "v2 project revision atomically pins Experience revision");
+    var secondProjectExperienceRef = Activator.CreateInstance(projectExperienceType)!;
+    Set(secondProjectExperienceRef, "ExperienceID", secondGraphExperienceId);
+    Set(secondProjectExperienceRef, "ExperienceRevision", 1L); Set(secondProjectExperienceRef, "SortOrder", 1);
+    ((IList)Get(graphRevision, "Experiences")!).Add(secondProjectExperienceRef);
+    Assert((bool)Call(provider, "SaveRevision", graphRevision, owner, 0L, DateTime.UtcNow)!, "v2 project revision atomically pins multiple Experience revisions");
     var graphRevisionRead = Call(provider, "GetRevision", graphProjectId, 1L)!;
     var graphRefs = (IList)Get(graphRevisionRead, "Experiences")!;
-    Assert(graphRefs.Count == 1 && Equals(Get(graphRefs[0]!, "ExperienceRevision"), 1L),
+    Assert(graphRefs.Count == 2 && Equals(Get(graphRefs[0]!, "ExperienceRevision"), 1L)
+        && Equals(Get(graphRefs[1]!, "ExperienceRevision"), 1L),
         "v2 project revision reads back its exact Experience revision pin");
 
     var runtimeServicesAssembly = Load("OpenSim.Services.UserAccountService");
@@ -257,9 +292,22 @@ try
         "OpenSim.Services.UserAccountService.GameProjectService", true)!;
     var runtimeProjectService = Activator.CreateInstance(runtimeProjectServiceType, new[] { provider })!;
     var resolveRuntimeWorld = runtimeProjectServiceType.GetMethod("ResolveRuntimeWorld")!;
-    var resolvedPinnedWorld = resolveRuntimeWorld.Invoke(runtimeProjectService, new[] { owner, graphProjectId, (object)1L })!;
-    Assert((string)Get(resolvedPinnedWorld, "Name")! == "Pinned World",
-        "v2 runtime resolver loads the exact Place revision pinned by the published project revision");
+    var resolveRuntimeDefinition = runtimeProjectServiceType.GetMethod("ResolveRuntimeDefinition")!;
+    var resolvedPinnedDefinition = resolveRuntimeDefinition.Invoke(runtimeProjectService,
+        new[] { owner, graphProjectId, (object)1L, graphExperienceId })!;
+    var resolvedPinnedWorld = Get(resolvedPinnedDefinition, "World")!;
+    Assert((string)Get(resolvedPinnedWorld, "Name")! == "Pinned World"
+        && Equals(Get(resolvedPinnedDefinition, "ExperienceID"), graphExperienceId),
+        "v2 runtime resolver loads the explicitly selected Experience and its exact pinned Place revision");
+    Assert(resolveRuntimeWorld.Invoke(runtimeProjectService, new[] { owner, graphProjectId, (object)1L }) == null,
+        "legacy implicit Experience resolution rejects ambiguous multi-Experience project revisions");
+    var resolvedSecondDefinition = resolveRuntimeDefinition.Invoke(runtimeProjectService,
+        new[] { owner, graphProjectId, (object)1L, secondGraphExperienceId })!;
+    Assert((string)Get(Get(resolvedSecondDefinition, "World")!, "Name")! == "Secondary World",
+        "v2 runtime resolver can independently start the second pinned Experience");
+    Assert(resolveRuntimeDefinition.Invoke(runtimeProjectService,
+        new[] { owner, graphProjectId, (object)1L, U("12345678-1234-4234-8234-123456789012") }) == null,
+        "v2 runtime resolver rejects an Experience not pinned by the requested project revision");
 
     var newerPlaceRevision = New("OpenSim.Data.GamePlaceRevisionData", dataAssembly);
     Set(newerPlaceRevision, "ProjectID", graphProjectId); Set(newerPlaceRevision, "ExperienceID", graphExperienceId);
@@ -270,10 +318,10 @@ try
     Set(newerPlaceRevision, "CreatedBy", owner); Set(newerPlaceRevision, "CreatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "SavePlaceRevision", newerPlaceRevision, owner, 1L, DateTime.UtcNow)!,
         "a later immutable Place revision can be saved without rewriting history");
-    var resolvedAfterPlaceUpdate = resolveRuntimeWorld.Invoke(runtimeProjectService,
-        new[] { owner, graphProjectId, (object)1L })!;
-    Assert((string)Get(resolvedAfterPlaceUpdate, "Name")! == "Pinned World",
-        "runtime resolver continues using the project's pinned Place revision after a newer Place revision is saved");
+    var resolvedAfterPlaceUpdate = resolveRuntimeDefinition.Invoke(runtimeProjectService,
+        new[] { owner, graphProjectId, (object)1L, graphExperienceId })!;
+    Assert((string)Get(Get(resolvedAfterPlaceUpdate, "World")!, "Name")! == "Pinned World",
+        "runtime resolver continues using the selected Experience's pinned Place revision after a newer Place revision is saved");
 
     Assert((bool)Call(provider, "PublishProject", graphProjectId, owner, 1L,
         (DateTime)Get(Call(provider, "GetProject", graphProjectId)!, "UpdatedUTC")!, DateTime.UtcNow)!,
