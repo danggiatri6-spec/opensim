@@ -16,6 +16,7 @@
     <Reference Include="Nini"><HintPath>../../../bin/Nini.dll</HintPath></Reference>
     <Reference Include="OpenSim.Services.AuthenticationService"><HintPath>../../../bin/OpenSim.Services.AuthenticationService.dll</HintPath></Reference>
     <Reference Include="OpenSim.Data.SQLite"><HintPath>../../../bin/OpenSim.Data.SQLite.dll</HintPath></Reference>
+    <Reference Include="System.Data.SQLite"><HintPath>../../../bin/System.Data.SQLite.dll</HintPath></Reference>
     <ProjectReference Include="../GameRuntime.csproj" />
   </ItemGroup>
 </Project>
