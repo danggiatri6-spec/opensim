@@ -45,6 +45,7 @@ namespace OpenSim.Services.Interfaces
         public UUID OwnerID { get; set; }
         public UUID ProjectID { get; set; }
         public long ProjectRevision { get; set; }
+        public UUID ExperienceID { get; set; }
         public UUID WorldID { get; set; }
         public GameInstanceState State { get; set; }
         public DateTime CreatedUTC { get; set; }
@@ -77,6 +78,13 @@ namespace OpenSim.Services.Interfaces
             UUID authenticatedOwnerID,
             UUID projectID,
             long revision,
+            CancellationToken cancellationToken = default);
+
+        Task<GameInstanceResult> StartInstanceAsync(
+            UUID authenticatedOwnerID,
+            UUID projectID,
+            long revision,
+            UUID experienceID,
             CancellationToken cancellationToken = default);
 
         Task<GameInstanceResult> StopInstanceAsync(
