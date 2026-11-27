@@ -282,6 +282,51 @@ try
     var servicesAssembly = Load("OpenSim.Services.UserAccountService");
     var projectServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameProjectService", true)!;
     var projectService = Activator.CreateInstance(projectServiceType, new[] { provider })!;
+    // Service-layer tests exercise owner scoping, revision validation and exact Place pins.
+    var serviceProjectId = U("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+    var serviceProject = New("OpenSim.Data.GameProjectData", dataAssembly);
+    Set(serviceProject, "ProjectID", serviceProjectId); Set(serviceProject, "OwnerID", owner);
+    Set(serviceProject, "Name", "Experience Service Test"); Set(serviceProject, "Description", "");
+    Set(serviceProject, "Status", 0); Set(serviceProject, "SchemaVersion", 1);
+    Set(serviceProject, "CurrentRevision", 0L); Set(serviceProject, "CreatedUTC", DateTime.UtcNow);
+    Set(serviceProject, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateProject", serviceProject)!, "SQLite creates a draft for Experience service tests");
+
+    var experienceServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameExperienceService", true)!;
+    var experienceService = Activator.CreateInstance(experienceServiceType, new[] { provider })!;
+    var createdExperience = Call(experienceService, "CreateExperience", owner, serviceProjectId)!;
+    Assert(createdExperience != null, "GameExperienceService creates an owner-scoped Experience identity");
+    var serviceExperienceId = Get(createdExperience, "ExperienceID")!;
+    var createdPlace = Call(experienceService, "CreatePlace", owner, serviceProjectId, serviceExperienceId)!;
+    Assert(createdPlace != null, "GameExperienceService creates a Place inside its Experience");
+    var servicePlaceId = Get(createdPlace, "PlaceID")!;
+    Assert((bool)Call(experienceService, "SavePlaceRevision", owner, serviceProjectId, serviceExperienceId,
+        servicePlaceId, 0L, 1, "Service Place", "Entry", "{\\"format\\":1}")!,
+        "GameExperienceService saves a validated immutable Place revision");
+    Assert(!(bool)Call(experienceService, "SavePlaceRevision", owner, serviceProjectId, serviceExperienceId,
+        servicePlaceId, 0L, 1, "Stale", "", "{\\"format\\":1}")!,
+        "GameExperienceService rejects a stale Place revision compare-and-swap");
+    Assert(!(bool)Call(experienceService, "SavePlaceRevision", otherOwner, serviceProjectId, serviceExperienceId,
+        servicePlaceId, 1L, 1, "Foreign", "", "{\\"format\\":1}")!,
+        "GameExperienceService rejects Place writes by a different owner");
+
+    var pinType = contracts.GetType("OpenSim.Services.Interfaces.GameExperiencePlacePin", true)!;
+    var pinListType = typeof(List<>).MakeGenericType(pinType);
+    var servicePins = (IList)Activator.CreateInstance(pinListType)!;
+    var servicePin = Activator.CreateInstance(pinType)!;
+    Set(servicePin, "PlaceID", servicePlaceId); Set(servicePin, "PlaceRevision", 1L); Set(servicePin, "SortOrder", 0);
+    servicePins.Add(servicePin);
+    Assert((bool)Call(experienceService, "SaveExperienceRevision", owner, serviceProjectId, serviceExperienceId,
+        0L, 1, "Service Experience", servicePlaceId, servicePins)!,
+        "GameExperienceService saves an Experience revision pinned to the exact Place revision");
+    var serviceExperienceRevision = Call(experienceService, "GetExperienceRevision", owner,
+        serviceProjectId, serviceExperienceId, 1L)!;
+    Assert(serviceExperienceRevision != null && ((IList)Get(serviceExperienceRevision, "Places")!).Count == 1,
+        "GameExperienceService reads back the immutable Experience-to-Place pin");
+    Assert(Call(experienceService, "GetExperienceRevision", otherOwner, serviceProjectId,
+        serviceExperienceId, 1L) == null,
+        "GameExperienceService does not disclose Experience revisions to another owner");
+
     var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
     Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest; error=" + Get(publishResult, "Error") + "; message=" + Get(publishResult, "Message"));
     var foreignPublish = Call(projectService, "PublishProject", otherOwner, projectId, 1L)!;
