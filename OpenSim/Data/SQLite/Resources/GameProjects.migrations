@@ -111,3 +111,51 @@ CREATE INDEX IX_GamePlaces_Experience ON GamePlaces(ProjectID, ExperienceID);
 CREATE INDEX IX_GamePlaceRevisions_Lookup ON GamePlaceRevisions(ProjectID, ExperienceID, PlaceID, Revision);
 CREATE INDEX IX_GameExperienceRevisions_Lookup ON GameExperienceRevisions(ProjectID, ExperienceID, Revision);
 CREATE INDEX IX_GameProjectRevisionExperiences_Experience ON GameProjectRevisionExperiences(ProjectID, ExperienceID, ExperienceRevision);
+
+:VERSION 3
+ALTER TABLE GameExperiences ADD COLUMN CurrentRevision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE GamePlaces ADD COLUMN CurrentRevision INTEGER NOT NULL DEFAULT 0;
+
+CREATE TRIGGER TR_GamePlaceRevisions_NoUpdate
+BEFORE UPDATE ON GamePlaceRevisions
+BEGIN
+    SELECT RAISE(ABORT, 'Place revisions are immutable');
+END;
+CREATE TRIGGER TR_GamePlaceRevisions_NoDelete
+BEFORE DELETE ON GamePlaceRevisions
+BEGIN
+    SELECT RAISE(ABORT, 'Place revisions are immutable');
+END;
+
+CREATE TRIGGER TR_GameExperienceRevisions_NoUpdate
+BEFORE UPDATE ON GameExperienceRevisions
+BEGIN
+    SELECT RAISE(ABORT, 'Experience revisions are immutable');
+END;
+CREATE TRIGGER TR_GameExperienceRevisions_NoDelete
+BEFORE DELETE ON GameExperienceRevisions
+BEGIN
+    SELECT RAISE(ABORT, 'Experience revisions are immutable');
+END;
+
+CREATE TRIGGER TR_GameExperienceRevisionPlaces_NoUpdate
+BEFORE UPDATE ON GameExperienceRevisionPlaces
+BEGIN
+    SELECT RAISE(ABORT, 'Experience revision Place membership is immutable');
+END;
+CREATE TRIGGER TR_GameExperienceRevisionPlaces_NoDelete
+BEFORE DELETE ON GameExperienceRevisionPlaces
+BEGIN
+    SELECT RAISE(ABORT, 'Experience revision Place membership is immutable');
+END;
+
+CREATE TRIGGER TR_GameProjectRevisionExperiences_NoUpdate
+BEFORE UPDATE ON GameProjectRevisionExperiences
+BEGIN
+    SELECT RAISE(ABORT, 'Project revision Experience membership is immutable');
+END;
+CREATE TRIGGER TR_GameProjectRevisionExperiences_NoDelete
+BEFORE DELETE ON GameProjectRevisionExperiences
+BEGIN
+    SELECT RAISE(ABORT, 'Project revision Experience membership is immutable');
+END;
