@@ -327,9 +327,17 @@ namespace OpenSim.Services.Interfaces
     /// Resolves a runtime world from an exact immutable project revision.
     /// Implementations must never substitute current mutable Experience/Place revisions.
     /// </summary>
+    public sealed class GameRuntimeWorldDefinition
+    {
+        public UUID ExperienceID { get; set; }
+        public GameWorldDefinition World { get; set; }
+    }
+
     public interface IGameProjectRuntimeDefinitionService
     {
         GameWorldDefinition ResolveRuntimeWorld(UUID authenticatedOwnerID, UUID projectID, long projectRevision);
+        GameRuntimeWorldDefinition ResolveRuntimeDefinition(
+            UUID authenticatedOwnerID, UUID projectID, long projectRevision, UUID experienceID);
     }
 
     public interface IGameProjectService
