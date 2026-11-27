@@ -36,6 +36,11 @@ namespace OpenSim.Data.SQLite
         {
             SQLiteConnection connection = new SQLiteConnection(_connectionString);
             connection.Open();
+            using (SQLiteCommand command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA foreign_keys = ON";
+                command.ExecuteNonQuery();
+            }
             return connection;
         }
 
