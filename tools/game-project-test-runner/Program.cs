@@ -50,6 +50,20 @@ Set(Get(manifest, "Settings")!, "DefaultWorldID", worldId);
 var valid = validatorType.GetMethod("Validate")!.Invoke(null, new[] { manifest })!;
 Assert((bool)Get(valid, "IsValid")!, "valid manifest is accepted");
 
+var adapterType = contracts.GetType("OpenSim.Services.Interfaces.GameProjectExperienceAdapter", true)!;
+var experienceId = U("77777777-7777-4777-8777-777777777777");
+var experience = adapterType.GetMethod("FromLegacyManifest")!.Invoke(null,
+    new object?[] { manifest, experienceId, "Default Experience" })!;
+Assert(Equals(Get(experience, "ExperienceID"), experienceId),
+    "legacy manifest adapter preserves the supplied Experience ID");
+Assert(Equals(Get(experience, "StartPlaceID"), worldId),
+    "legacy default world maps to the Experience start Place");
+var places = (IList)Get(experience, "Places")!;
+Assert(places.Count == 1 && Equals(Get(places[0]!, "PlaceID"), worldId),
+    "each legacy world maps to a stable Place ID without changing its ID");
+Assert(((IList)Get(places[0]!, "Worlds")!).Count == 1,
+    "legacy Place retains its declarative world definition");
+
 var invalidManifest = New(manifestType.FullName!, contracts);
 Set(invalidManifest, "Name", "Missing world");
 var invalid = validatorType.GetMethod("Validate")!.Invoke(null, new[] { invalidManifest })!;
