@@ -142,7 +142,15 @@ A v1 project is not silently rewritten on read. Promotion is an explicit operati
 5. Saves a new v2 project revision pinning that exact Experience revision.
 6. Uses compare-and-swap at each aggregate boundary and reports partial draft identity creation without altering the historical v1 revision.
 
-Before promotion ships, define and test a deterministic ExperienceID derivation from ProjectID (including UUID byte order and namespace), so retries cannot create duplicate default Experiences. Do not infer this identity from a random UUID generated per request.
+The deterministic identity contract is now defined by `GameProjectExperienceAdapter.GetLegacyDefaultExperienceID(ProjectID)`:
+
+1. Reject `UUID.Zero`.
+2. Encode UTF-8 text `opensim-next:legacy-default-experience:v1:` followed by the ProjectID in canonical lowercase UUID `D` format.
+3. Compute SHA-256 and take the first 16 digest bytes.
+4. Set the UUID version nibble to 5 and the RFC 4122 variant bits.
+5. Format those bytes as canonical hexadecimal UUID text and parse with `UUID.Parse`. This avoids relying on .NET `Guid` mixed-endian byte layout.
+
+The namespace/prefix, canonical text input, digest algorithm, truncation, and bit masks are migration compatibility rules and must not change after promotion data is written. The Game Project integration runner verifies retry stability, project separation, and a fixed test vector (`44444444-4444-4444-8444-444444444444` → `f4131522-9790-5b94-be00-2618a38af793`). Promotion itself remains a separate explicit operation; reads still do not auto-migrate v1 projects.
 
 ## Required tests before enabling routes
 
