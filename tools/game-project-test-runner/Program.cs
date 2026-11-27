@@ -96,7 +96,7 @@ try
     Set(revision, "ProjectID", projectId);
     Set(revision, "Revision", 1L);
     Set(revision, "SchemaVersion", 1);
-    Set(revision, "ManifestJson", "{\"schemaVersion\":1,\"name\":\"Integration Test\",\"worlds\":[{\"worldID\":\"11111111-1111-4111-8111-111111111111\",\"name\":\"Main World\",\"sizeX\":256,\"sizeY\":256,\"spawnPoints\":[],\"assetReferences\":[]}],\"settings\":{\"gameMode\":\"sandbox\",\"defaultWorldID\":\"11111111-1111-4111-8111-111111111111\",\"visibility\":\"private\",\"maxPlayers\":16,\"tags\":[]}}");
+    Set(revision, "ManifestJson", "{\"SchemaVersion\":1,\"Name\":\"Integration Test\",\"Worlds\":[{\"WorldID\":\"11111111-1111-4111-8111-111111111111\",\"Name\":\"Main World\",\"SizeX\":256,\"SizeY\":256,\"SpawnPoints\":[],\"AssetReferences\":[]}],\"Settings\":{\"GameMode\":\"sandbox\",\"DefaultWorldID\":\"11111111-1111-4111-8111-111111111111\",\"Visibility\":\"private\",\"MaxPlayers\":16,\"Tags\":[]}}");
     Set(revision, "CreatedBy", owner);
     Set(revision, "CreatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "SaveRevision", revision, owner, 0L, DateTime.UtcNow)!, "first revision saves atomically");
@@ -121,7 +121,7 @@ try
     var projectServiceType = servicesAssembly.GetType("OpenSim.Services.UserAccountService.GameProjectService", true)!;
     var projectService = Activator.CreateInstance(projectServiceType, new[] { provider })!;
     var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
-    Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest");
+    Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest; error=" + Get(publishResult, "Error") + "; message=" + Get(publishResult, "Message"));
     var foreignPublish = Call(projectService, "PublishProject", otherOwner, projectId, 1L)!;
     Assert(Get(foreignPublish, "Error")!.ToString() == "NotFound",
         "GameProjectService does not disclose projects to a different owner");
