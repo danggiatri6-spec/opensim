@@ -106,7 +106,7 @@ VALUES (@ProjectID, @OwnerID, @Name, @Description, @Status, @SchemaVersion, @Cur
             using (SQLiteCommand command = connection.CreateCommand())
             {
                 command.CommandText = @"UPDATE GameProjects SET Name = @Name, Description = @Description, UpdatedUTC = @UpdatedUTC
-WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @ExpectedRevision AND UpdatedUTC = @ExpectedUpdatedUTC AND Status <> 2";
+WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @ExpectedRevision AND UpdatedUTC = @ExpectedUpdatedUTC AND Status = 0";
                 command.Parameters.AddWithValue("@Name", name ?? string.Empty);
                 command.Parameters.AddWithValue("@Description", description ?? string.Empty);
                 command.Parameters.AddWithValue("@UpdatedUTC", FormatDate(updatedUTC));
