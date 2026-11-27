@@ -89,6 +89,10 @@ namespace OpenSim.Services.UserAccountService
             {
                 if (!m_Database.CreateProject(data))
                 {
+                    Console.Error.WriteLine(
+                        "[GAME PROJECT DIAGNOSTIC] provider={0}; project={1}; owner={2}; projectZero={3}; ownerZero={4}; returned=false",
+                        m_Database.GetType().AssemblyQualifiedName, data.ProjectID, data.OwnerID,
+                        data.ProjectID == UUID.Zero, data.OwnerID == UUID.Zero);
                     m_log.ErrorFormat(
                         "[GAME PROJECT]: Storage provider {0} rejected project insert for {1}.",
                         m_Database.GetType().FullName, data.ProjectID);
@@ -99,6 +103,9 @@ namespace OpenSim.Services.UserAccountService
             }
             catch (Exception exception)
             {
+                Console.Error.WriteLine(
+                    "[GAME PROJECT DIAGNOSTIC] provider={0}; project={1}; exception={2}",
+                    m_Database.GetType().AssemblyQualifiedName, data.ProjectID, exception);
                 m_log.ErrorFormat(
                     "[GAME PROJECT]: Storage provider {0} failed to create project {1}.",
                     m_Database.GetType().FullName, data.ProjectID, exception);
