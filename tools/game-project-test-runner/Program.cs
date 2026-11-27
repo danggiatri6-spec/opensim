@@ -266,7 +266,7 @@ try
     Set(newerPlaceRevision, "PlaceID", graphPlaceId); Set(newerPlaceRevision, "Revision", 2L);
     Set(newerPlaceRevision, "SchemaVersion", 1); Set(newerPlaceRevision, "Name", "Updated Place");
     Set(newerPlaceRevision, "Description", ""); Set(newerPlaceRevision, "DefinitionJson",
-        "{\\"WorldID\\":\\"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb\\",\\"Name\\":\\"Updated World\\",\\"Description\\":\\"\\",\\"SizeX\\":256,\\"SizeY\\":256,\\"SpawnPoints\\":[],\\"AssetReferences\\":[]}");
+        @"{""WorldID"":""bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"",""Name"":""Updated World"",""Description"":"""",""SizeX"":256,""SizeY"":256,""SpawnPoints"":[],""AssetReferences"":[]}");
     Set(newerPlaceRevision, "CreatedBy", owner); Set(newerPlaceRevision, "CreatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "SavePlaceRevision", newerPlaceRevision, owner, 1L, DateTime.UtcNow)!,
         "a later immutable Place revision can be saved without rewriting history");
