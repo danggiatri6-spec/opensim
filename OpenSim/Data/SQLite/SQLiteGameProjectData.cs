@@ -131,6 +131,21 @@ WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @Expec
                 || string.IsNullOrEmpty(revision.ManifestJson))
                 return false;
 
+            if (revision.Experiences == null
+                || (revision.SchemaVersion >= 2 && revision.Experiences.Count == 0)
+                || (revision.SchemaVersion < 2 && revision.Experiences.Count != 0))
+                return false;
+
+            HashSet<UUID> experienceIDs = new HashSet<UUID>();
+            HashSet<int> sortOrders = new HashSet<int>();
+            foreach (GameProjectExperienceRevisionData experience in revision.Experiences)
+            {
+                if (experience == null || experience.ExperienceID == UUID.Zero
+                    || experience.ExperienceRevision < 1 || experience.SortOrder < 0
+                    || !experienceIDs.Add(experience.ExperienceID) || !sortOrders.Add(experience.SortOrder))
+                    return false;
+            }
+
             using (SQLiteConnection connection = OpenConnection())
             using (SQLiteTransaction transaction = connection.BeginTransaction(IsolationLevel.Serializable))
             {
@@ -155,6 +170,35 @@ WHERE EXISTS (SELECT 1 FROM GameProjects WHERE ProjectID = @ProjectID AND OwnerI
                         {
                             transaction.Rollback();
                             return false;
+                        }
+                    }
+
+                    foreach (GameProjectExperienceRevisionData experience in revision.Experiences)
+                    {
+                        using (SQLiteCommand link = connection.CreateCommand())
+                        {
+                            link.Transaction = transaction;
+                            link.CommandText = @"INSERT INTO GameProjectRevisionExperiences
+(ProjectID, ProjectRevision, ExperienceID, ExperienceRevision, SortOrder)
+SELECT @ProjectID, @ProjectRevision, @ExperienceID, @ExperienceRevision, @SortOrder
+WHERE EXISTS (
+    SELECT 1 FROM GameExperienceRevisions r
+    JOIN GameExperiences e ON e.ProjectID = r.ProjectID AND e.ExperienceID = r.ExperienceID
+    JOIN GameProjects p ON p.ProjectID = e.ProjectID
+    WHERE r.ProjectID = @ProjectID AND r.ExperienceID = @ExperienceID
+      AND r.Revision = @ExperienceRevision AND p.OwnerID = @OwnerID AND p.Status = 0
+)";
+                            link.Parameters.AddWithValue("@ProjectID", revision.ProjectID.ToString());
+                            link.Parameters.AddWithValue("@ProjectRevision", revision.Revision);
+                            link.Parameters.AddWithValue("@ExperienceID", experience.ExperienceID.ToString());
+                            link.Parameters.AddWithValue("@ExperienceRevision", experience.ExperienceRevision);
+                            link.Parameters.AddWithValue("@SortOrder", experience.SortOrder);
+                            link.Parameters.AddWithValue("@OwnerID", ownerID.ToString());
+                            if (link.ExecuteNonQuery() != 1)
+                            {
+                                transaction.Rollback();
+                                return false;
+                            }
                         }
                     }
 
@@ -189,25 +233,48 @@ WHERE ProjectID = @ProjectID AND OwnerID = @OwnerID AND CurrentRevision = @Expec
         public GameProjectRevisionData GetRevision(UUID projectID, long revision)
         {
             using (SQLiteConnection connection = OpenConnection())
-            using (SQLiteCommand command = connection.CreateCommand())
             {
-                command.CommandText = @"SELECT ProjectID, Revision, SchemaVersion, ManifestJson, CreatedBy, CreatedUTC
-FROM GameProjectRevisions WHERE ProjectID = @ProjectID AND Revision = @Revision";
-                command.Parameters.AddWithValue("@ProjectID", projectID.ToString());
-                command.Parameters.AddWithValue("@Revision", revision);
-                using (SQLiteDataReader reader = command.ExecuteReader())
+                GameProjectRevisionData result = null;
+                using (SQLiteCommand command = connection.CreateCommand())
                 {
-                    if (!reader.Read()) return null;
-                    return new GameProjectRevisionData
+                    command.CommandText = @"SELECT ProjectID, Revision, SchemaVersion, ManifestJson, CreatedBy, CreatedUTC
+FROM GameProjectRevisions WHERE ProjectID = @ProjectID AND Revision = @Revision";
+                    command.Parameters.AddWithValue("@ProjectID", projectID.ToString());
+                    command.Parameters.AddWithValue("@Revision", revision);
+                    using (SQLiteDataReader reader = command.ExecuteReader())
                     {
-                        ProjectID = UUID.Parse(reader["ProjectID"].ToString()),
-                        Revision = Convert.ToInt64(reader["Revision"], CultureInfo.InvariantCulture),
-                        SchemaVersion = Convert.ToInt32(reader["SchemaVersion"], CultureInfo.InvariantCulture),
-                        ManifestJson = reader["ManifestJson"].ToString(),
-                        CreatedBy = UUID.Parse(reader["CreatedBy"].ToString()),
-                        CreatedUTC = ParseDate(reader["CreatedUTC"].ToString())
-                    };
+                        if (!reader.Read()) return null;
+                        result = new GameProjectRevisionData
+                        {
+                            ProjectID = UUID.Parse(reader["ProjectID"].ToString()),
+                            Revision = Convert.ToInt64(reader["Revision"], CultureInfo.InvariantCulture),
+                            SchemaVersion = Convert.ToInt32(reader["SchemaVersion"], CultureInfo.InvariantCulture),
+                            ManifestJson = reader["ManifestJson"].ToString(),
+                            CreatedBy = UUID.Parse(reader["CreatedBy"].ToString()),
+                            CreatedUTC = ParseDate(reader["CreatedUTC"].ToString())
+                        };
+                    }
                 }
+
+                using (SQLiteCommand links = connection.CreateCommand())
+                {
+                    links.CommandText = @"SELECT ExperienceID, ExperienceRevision, SortOrder
+FROM GameProjectRevisionExperiences
+WHERE ProjectID = @ProjectID AND ProjectRevision = @Revision ORDER BY SortOrder";
+                    links.Parameters.AddWithValue("@ProjectID", projectID.ToString());
+                    links.Parameters.AddWithValue("@Revision", revision);
+                    using (SQLiteDataReader reader = links.ExecuteReader())
+                    {
+                        while (reader.Read())
+                            result.Experiences.Add(new GameProjectExperienceRevisionData
+                            {
+                                ExperienceID = UUID.Parse(reader["ExperienceID"].ToString()),
+                                ExperienceRevision = Convert.ToInt64(reader["ExperienceRevision"], CultureInfo.InvariantCulture),
+                                SortOrder = Convert.ToInt32(reader["SortOrder"], CultureInfo.InvariantCulture)
+                            });
+                    }
+                }
+                return result;
             }
         }
 
