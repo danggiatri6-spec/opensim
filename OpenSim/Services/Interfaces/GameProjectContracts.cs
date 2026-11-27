@@ -341,6 +341,9 @@ namespace OpenSim.Services.Interfaces
             string name,
             string description);
 
+        GameProjectResult PublishProject(UUID authenticatedOwnerID, UUID projectID,
+            long expectedCurrentRevision);
+
         bool ArchiveProject(UUID authenticatedOwnerID, UUID projectID);
     }
 }
