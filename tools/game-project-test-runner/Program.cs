@@ -301,13 +301,13 @@ try
     Assert(createdPlace != null, "GameExperienceService creates a Place inside its Experience");
     var servicePlaceId = Get(createdPlace, "PlaceID")!;
     Assert((bool)Call(experienceService, "SavePlaceRevision", owner, serviceProjectId, serviceExperienceId,
-        servicePlaceId, 0L, 1, "Service Place", "Entry", "{\\"format\\":1}")!,
+        servicePlaceId, 0L, 1, "Service Place", "Entry", @"{""format"":1}")!,
         "GameExperienceService saves a validated immutable Place revision");
     Assert(!(bool)Call(experienceService, "SavePlaceRevision", owner, serviceProjectId, serviceExperienceId,
-        servicePlaceId, 0L, 1, "Stale", "", "{\\"format\\":1}")!,
+        servicePlaceId, 0L, 1, "Stale", "", @"{""format"":1}")!,
         "GameExperienceService rejects a stale Place revision compare-and-swap");
     Assert(!(bool)Call(experienceService, "SavePlaceRevision", otherOwner, serviceProjectId, serviceExperienceId,
-        servicePlaceId, 1L, 1, "Foreign", "", "{\\"format\\":1}")!,
+        servicePlaceId, 1L, 1, "Foreign", "", @"{""format"":1}")!,
         "GameExperienceService rejects Place writes by a different owner");
 
     var pinType = contracts.GetType("OpenSim.Services.Interfaces.GameExperiencePlacePin", true)!;
