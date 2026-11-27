@@ -78,4 +78,44 @@ namespace OpenSim.Services.Interfaces
             return experience;
         }
     }
+
+    /// <summary>
+    /// Validates the Experience/Place graph before it is persisted or used to
+    /// provision a runtime. IDs are stable domain identifiers, not Region IDs.
+    /// </summary>
+    public static class GameExperienceValidator
+    {
+        public static GameProjectValidationResult Validate(GameExperienceDefinition experience)
+        {
+            if (experience == null)
+                return GameProjectValidationResult.Invalid("Experience is required.");
+            if (experience.ExperienceID == UUID.Zero)
+                return GameProjectValidationResult.Invalid("Experience ID must be non-zero.");
+            if (string.IsNullOrWhiteSpace(experience.Name) || experience.Name.Trim().Length > 80)
+                return GameProjectValidationResult.Invalid("Experience name must contain between 1 and 80 characters.");
+            if (experience.Places == null || experience.Places.Count == 0 || experience.Places.Count > GameProjectManifestValidator.MaximumWorlds)
+                return GameProjectValidationResult.Invalid("Experience must contain between 1 and 64 Places.");
+
+            var placeIDs = new HashSet<UUID>();
+            foreach (GamePlaceDefinition place in experience.Places)
+            {
+                if (place == null || place.PlaceID == UUID.Zero || !placeIDs.Add(place.PlaceID))
+                    return GameProjectValidationResult.Invalid("Place IDs must be non-zero and unique within an Experience.");
+                if (string.IsNullOrWhiteSpace(place.Name) || place.Name.Trim().Length > 80)
+                    return GameProjectValidationResult.Invalid("Place names must contain between 1 and 80 characters.");
+                if (place.Description != null && place.Description.Length > 2000)
+                    return GameProjectValidationResult.Invalid("Place descriptions cannot exceed 2000 characters.");
+                if (place.Worlds == null || place.Worlds.Count > 1)
+                    return GameProjectValidationResult.Invalid("Each Place must map to at most one legacy World in the compatibility schema.");
+                if (place.Worlds.Count == 1 && (place.Worlds[0] == null || place.Worlds[0].WorldID != place.PlaceID))
+                    return GameProjectValidationResult.Invalid("A legacy World mapped to a Place must retain the same stable ID.");
+            }
+
+            if (experience.StartPlaceID == UUID.Zero || !placeIDs.Contains(experience.StartPlaceID))
+                return GameProjectValidationResult.Invalid("StartPlaceID must reference a Place in this Experience.");
+
+            return GameProjectValidationResult.Valid();
+        }
+    }
+
 }
