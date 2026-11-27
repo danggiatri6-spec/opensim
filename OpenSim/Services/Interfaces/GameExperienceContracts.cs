@@ -41,6 +41,31 @@ namespace OpenSim.Services.Interfaces
     /// </summary>
     public static class GameProjectExperienceAdapter
     {
+        // UUIDv5-shaped stable identity using SHA-256. The namespace string and
+        // canonical ProjectID text are part of the persisted migration contract.
+        // Input bytes are UTF-8 for:
+        // "opensim-next:legacy-default-experience:v1:" + ProjectID in lowercase D format.
+        public static UUID GetLegacyDefaultExperienceID(UUID projectID)
+        {
+            if (projectID == UUID.Zero)
+                throw new ArgumentException("Project ID must be non-zero.", nameof(projectID));
+
+            string input = "opensim-next:legacy-default-experience:v1:"
+                + projectID.ToString().ToLowerInvariant();
+            byte[] hash;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                hash = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(input));
+
+            // Set RFC 4122 variant and version 5 bits, then format explicitly
+            // so UUID byte ordering is independent of Guid's mixed-endian layout.
+            hash[6] = (byte)((hash[6] & 0x0f) | 0x50);
+            hash[8] = (byte)((hash[8] & 0x3f) | 0x80);
+            string hex = BitConverter.ToString(hash, 0, 16).Replace("-", "").ToLowerInvariant();
+            string value = hex.Substring(0, 8) + "-" + hex.Substring(8, 4) + "-"
+                + hex.Substring(12, 4) + "-" + hex.Substring(16, 4) + "-" + hex.Substring(20, 12);
+            return UUID.Parse(value);
+        }
+
         public static GameExperienceDefinition FromLegacyManifest(
             GameProjectManifest manifest,
             UUID experienceID,
