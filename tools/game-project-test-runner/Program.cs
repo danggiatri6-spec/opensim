@@ -122,6 +122,53 @@ try
     var projectService = Activator.CreateInstance(projectServiceType, new[] { provider })!;
     var publishResult = Call(projectService, "PublishProject", owner, projectId, 1L)!;
     Assert((bool)Get(publishResult, "Success")!, "GameProjectService validates and publishes a valid immutable manifest");
+    var foreignPublish = Call(projectService, "PublishProject", otherOwner, projectId, 1L)!;
+    Assert(Get(foreignPublish, "Error")!.ToString() == "NotFound",
+        "GameProjectService does not disclose projects to a different owner");
+
+    var invalidProjectId = U("55555555-5555-4555-8555-555555555555");
+    var invalidProject = New("OpenSim.Data.GameProjectData", dataAssembly);
+    Set(invalidProject, "ProjectID", invalidProjectId);
+    Set(invalidProject, "OwnerID", owner);
+    Set(invalidProject, "Name", "Invalid Manifest");
+    Set(invalidProject, "Description", "");
+    Set(invalidProject, "Status", 0);
+    Set(invalidProject, "SchemaVersion", 1);
+    Set(invalidProject, "CurrentRevision", 0L);
+    Set(invalidProject, "CreatedUTC", DateTime.UtcNow);
+    Set(invalidProject, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateProject", invalidProject)!, "SQLite creates a second draft for validation rejection");
+    var invalidRevision = New("OpenSim.Data.GameProjectRevisionData", dataAssembly);
+    Set(invalidRevision, "ProjectID", invalidProjectId);
+    Set(invalidRevision, "Revision", 1L);
+    Set(invalidRevision, "SchemaVersion", 1);
+    Set(invalidRevision, "ManifestJson", "{malformed");
+    Set(invalidRevision, "CreatedBy", owner);
+    Set(invalidRevision, "CreatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "SaveRevision", invalidRevision, owner, 0L, DateTime.UtcNow)!,
+        "SQLite can persist a malformed historical fixture for service validation testing");
+    var invalidPublish = Call(projectService, "PublishProject", owner, invalidProjectId, 1L)!;
+    Assert(Get(invalidPublish, "Error")!.ToString() == "InvalidData",
+        "GameProjectService refuses to publish malformed manifest JSON");
+    Assert((int)Get(Call(provider, "GetProject", invalidProjectId)!, "Status")! == 0,
+        "failed manifest validation leaves the project in Draft state");
+
+    var noRevisionId = U("66666666-6666-4666-8666-666666666666");
+    var noRevisionProject = New("OpenSim.Data.GameProjectData", dataAssembly);
+    Set(noRevisionProject, "ProjectID", noRevisionId);
+    Set(noRevisionProject, "OwnerID", owner);
+    Set(noRevisionProject, "Name", "No Revision");
+    Set(noRevisionProject, "Description", "");
+    Set(noRevisionProject, "Status", 0);
+    Set(noRevisionProject, "SchemaVersion", 1);
+    Set(noRevisionProject, "CurrentRevision", 0L);
+    Set(noRevisionProject, "CreatedUTC", DateTime.UtcNow);
+    Set(noRevisionProject, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateProject", noRevisionProject)!, "SQLite creates a draft with no revisions");
+    var noRevisionPublish = Call(projectService, "PublishProject", owner, noRevisionId, 0L)!;
+    Assert(Get(noRevisionPublish, "Error")!.ToString() == "InvalidData",
+        "GameProjectService refuses to publish a project with no saved revision");
+
     var published = Call(provider, "GetProject", projectId)!;
     Assert((int)Get(published, "Status")! == 1, "published status is persisted");
     updatedAt = (DateTime)Get(published, "UpdatedUTC")!;
