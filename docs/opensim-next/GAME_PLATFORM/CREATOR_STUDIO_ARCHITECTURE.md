@@ -101,7 +101,18 @@ Add safe event-driven game logic and UI authoring with explicit permission/capab
 ### C6 — Region bridge and multi-Place travel
 Implement Region-backed Places and Experience-level travel after standalone Place runtime is stable.
 
-## 9. MVP acceptance criteria
+## 9. Current implementation status
+
+The first additive C0 contract slice is present in `OpenSim/Services/Interfaces/GameExperienceContracts.cs`:
+
+- `GameExperienceDefinition` and `GamePlaceDefinition` are explicit domain contracts.
+- `GameProjectExperienceAdapter` maps a legacy v1 manifest into one default Experience.
+- Each legacy World maps to one Place while preserving its WorldID as PlaceID; the existing default world maps to StartPlaceID.
+- This is an in-memory compatibility projection only. It does not change persisted v1 JSON, SQLite tables, revision numbering, or runtime provisioning. Durable Experience/Place persistence requires a separately versioned schema migration and API contract.
+
+The Game Project test runner verifies the stable-ID mapping and start Place behavior.
+
+## 10. MVP acceptance criteria
 
 - A creator can create a project and a default Place without manually creating a Region.
 - A Place can be edited, validated, saved as an immutable revision, and published.
