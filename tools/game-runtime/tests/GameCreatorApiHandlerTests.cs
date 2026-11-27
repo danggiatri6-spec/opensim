@@ -51,6 +51,14 @@ internal static class GameCreatorApiHandlerTests
         Assert(validResponse.StatusCode == 201 && runtime.StartCalls == 1 && runtime.LastOwnerID == creator,
             "valid Creator request passes only the token-authenticated principal to Game Runtime");
 
+        UUID selectedExperience = UUID.Random();
+        FakeRequest selected = Request("POST", "/creator/instances",
+            "{\\"project_id\\":\\"" + project + "\\",\\"revision\\":1,\\"experience_id\\":\\"" + selectedExperience + "\\"}", creator);
+        FakeResponse selectedResponse = new();
+        handler.Handle("/creator/instances", selected.InputStream, selected, selectedResponse);
+        Assert(selectedResponse.StatusCode == 201 && runtime.StartCalls == 2,
+            "Creator start request accepts an explicit Experience selector");
+
         FakeRequest oversized = Request("POST", "/creator/instances",
             new string('x', 16 * 1024 + 1), creator);
         FakeResponse oversizedResponse = new();
@@ -331,6 +339,23 @@ internal static class GameCreatorApiHandlerTests
             {
                 Error = GameInstanceError.None,
                 Instance = new GameInstance { InstanceID = UUID.Random(), OwnerID = authenticatedOwnerID, ProjectID = projectID, ProjectRevision = revision, State = GameInstanceState.Running }
+            });
+        }
+
+        public Task<GameInstanceResult> StartInstanceAsync(
+            UUID authenticatedOwnerID, UUID projectID, long revision, UUID experienceID,
+            CancellationToken cancellationToken = default)
+        {
+            StartCalls++;
+            LastOwnerID = authenticatedOwnerID;
+            return Task.FromResult(new GameInstanceResult
+            {
+                Error = GameInstanceError.None,
+                Instance = new GameInstance
+                {
+                    InstanceID = UUID.Random(), OwnerID = authenticatedOwnerID, ProjectID = projectID,
+                    ProjectRevision = revision, ExperienceID = experienceID, State = GameInstanceState.Running
+                }
             });
         }
         public Task<GameInstanceResult> StopInstanceAsync(UUID authenticatedOwnerID, UUID instanceID, CancellationToken cancellationToken = default)
