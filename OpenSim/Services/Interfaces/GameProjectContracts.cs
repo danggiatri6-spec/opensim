@@ -315,6 +315,15 @@ namespace OpenSim.Services.Interfaces
     /// Storage/service boundary for creator-owned projects.
     /// Implementations must enforce ownership and optimistic concurrency server-side.
     /// </summary>
+    /// <summary>
+    /// Resolves a runtime world from an exact immutable project revision.
+    /// Implementations must never substitute current mutable Experience/Place revisions.
+    /// </summary>
+    public interface IGameProjectRuntimeDefinitionService
+    {
+        GameWorldDefinition ResolveRuntimeWorld(UUID authenticatedOwnerID, UUID projectID, long projectRevision);
+    }
+
     public interface IGameProjectService
     {
         GameProjectResult CreateProject(UUID authenticatedOwnerID, string name, string description);
