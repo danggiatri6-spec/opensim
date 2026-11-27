@@ -108,7 +108,7 @@ The first additive C0 contract slice is present in `OpenSim/Services/Interfaces/
 - `GameExperienceDefinition` and `GamePlaceDefinition` are explicit domain contracts.
 - `GameProjectExperienceAdapter` maps a legacy v1 manifest into one default Experience.
 - Each legacy World maps to one Place while preserving its WorldID as PlaceID; the existing default world maps to StartPlaceID.
-- This is an in-memory compatibility projection only. It does not change persisted v1 JSON, SQLite tables, revision numbering, or runtime provisioning. Durable Experience/Place persistence requires a separately versioned schema migration and API contract.
+- This is an in-memory compatibility projection only. It does not change persisted v1 JSON, SQLite tables, revision numbering, or runtime provisioning. Durable Experience/Place persistence requires a separately versioned schema migration and API contract. The durable revision graph, SQLite migration constraints, legacy promotion rules, and staged API rollout are specified in [EXPERIENCE_PLACE_PERSISTENCE.md](EXPERIENCE_PLACE_PERSISTENCE.md).
 
 The Game Project test runner verifies the stable-ID mapping and start Place behavior.
 
