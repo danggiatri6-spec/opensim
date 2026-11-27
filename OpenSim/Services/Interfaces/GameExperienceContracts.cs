@@ -118,4 +118,12 @@ namespace OpenSim.Services.Interfaces
         }
     }
 
+    /// <summary>Exact immutable Place revision selected by an Experience revision.</summary>
+    public sealed class GameExperiencePlacePin
+    {
+        public UUID PlaceID { get; set; }
+        public long PlaceRevision { get; set; }
+        public int SortOrder { get; set; }
+    }
+
 }
