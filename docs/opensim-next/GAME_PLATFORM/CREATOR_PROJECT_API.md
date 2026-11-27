@@ -1,8 +1,8 @@
 # Creator Project API — W6-E
 
-Status: implemented; CI validation pending for this commit series  
+Status: W6-E and W6-F implemented; CI validation pending for current commit series  
 Branch: opensim-next-dev  
-Date: 2026-11-26
+Date: 2026-11-27
 
 ## Scope
 
@@ -34,15 +34,40 @@ The connector registers GET, POST, PUT and PATCH handlers under `/creator/projec
 | PUT | `/creator/projects/{project_id}/draft` | `expected_current_revision`, `manifest`; validates and saves a new immutable revision |
 | GET | `/creator/projects/{project_id}/revisions/{revision}` | Reads an owned immutable revision |
 | PATCH | `/creator/projects/{project_id}` | `expected_current_revision`, `name`, optional `description`; optimistic concurrency |
-| POST | `/creator/projects/{project_id}/archive` | Archives the owned project |
+| POST | `/creator/projects/{project_id}/publish` | `expected_current_revision`; validates and atomically publishes the current immutable revision |\n| POST | `/creator/projects/{project_id}/archive` | Archives the owned project |
 
 A newly created project starts at revision 0. The first successful draft save must provide `expected_current_revision: 0`, producing immutable revision 1. Subsequent saves must send the latest current revision. Revision conflicts return HTTP 409. The project service rechecks owner, draft state, manifest validity, and revision under the storage boundary.
 
 Owner identity fields (`owner`, `owner_id`, `ownerId`, `authenticatedOwnerId`, etc.) are rejected recursively in submitted JSON. The UUID JSON converter accepts only string UUIDs. Manifest schema and bounds are validated by the existing `GameProjectManifestValidator`.
 
-## Important lifecycle limitation
+## Publish lifecycle — W6-F
 
-The current `IGameProjectService` and SQLite provider expose Draft, Published, and Archived status values, but do not yet provide a publish transition. This API therefore does not expose a publish route. A project can be created and revised, but cannot be started by Game Runtime until a separately tested atomic publish operation is added. Do not work around this by editing database status directly.
+Publishing is an explicit authenticated transition:
+
+`POST /creator/projects/{project_id}/publish`
+
+Request body:
+
+```json
+{ "expected_current_revision": 3 }
+```
+
+The service requires:
+- the authenticated principal owns the project;
+- the project is still Draft;
+- the supplied revision equals the project's current revision and is at least 1;
+- the current immutable revision exists, was created by the owner, and uses the supported schema;
+- the stored manifest is within the size limit, parses successfully, and passes the full manifest validator, including world IDs, dimensions, spawn points, asset references, settings and default-world membership.
+
+The SQLite provider performs a single conditional status update requiring Draft status, matching owner, matching current revision, matching update timestamp, and existence of the current immutable revision. This makes the state transition atomic against concurrent draft saves, metadata updates, archive and publish attempts. Repeated publish and stale revision attempts are rejected; revision conflicts return HTTP 409. The immutable revision row is never modified.
+
+After publishing, draft saves and metadata updates are rejected by the service. Game Runtime can then start only a published project revision. Archiving remains available for both Draft and Published projects; archived projects cannot be published or started. No direct database status edits are supported.
+
+The project service validates the manifest before invoking the storage transition. The provider also independently enforces the atomic state/revision/ownership preconditions; it does not replace service-level semantic manifest validation.
+
+## Remaining acceptance scope
+
+The current tests cover the service-to-SQLite publish path and Creator HTTP route with fake services. A live Robust listener end-to-end test using the production authentication module and configured database remains a separate deployment acceptance gate.
 
 ## Operational configuration
 
@@ -64,6 +89,6 @@ The Game Runtime test runner exercises:
 - draft save with expected revision;
 - immutable revision retrieval;
 - optimistic metadata update;
-- archive route.
+- publish route and owner-spoofing rejection.\n- archive route.\n- SQLite atomic publish, owner isolation, stale revision, repeated publish rejection, and immutable revision preservation.\n- service-level manifest validation before publication.
 
 These handler tests use fake authentication and project services. They do not replace SQLite provider integration tests or live Robust end-to-end acceptance.
