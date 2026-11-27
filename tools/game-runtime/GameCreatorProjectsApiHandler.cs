@@ -78,6 +78,8 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
             return Reply(response, HttpStatusCode.BadRequest, new { error = "revision_number_required" });
         else if (segments.Length == 5 && segments[3] == "revisions" && HttpMethod == "GET")
             return GetRevision(response, owner, projectID, segments[4]);
+        else if (segments.Length == 4 && segments[3] == "publish" && HttpMethod == "POST")
+            return Publish(requestData, request, response, owner, projectID);
         else if (segments.Length == 4 && segments[3] == "archive" && HttpMethod == "POST")
             return Archive(response, owner, projectID);
 
@@ -173,6 +175,25 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
         return snapshot is null
             ? Reply(response, HttpStatusCode.NotFound, new { error = "not_found" })
             : Reply(response, HttpStatusCode.OK, new { revision = snapshot });
+    }
+
+    private byte[] Publish(Stream body, IOSHttpRequest request, IOSHttpResponse response, UUID owner, UUID projectID)
+    {
+        if (!ReadBody(body, request, out string json))
+            return Reply(response, HttpStatusCode.BadRequest, new { error = "invalid_or_oversized_body" });
+        try
+        {
+            using JsonDocument doc = JsonDocument.Parse(json);
+            JsonElement root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object || HasOwnerField(root)
+                || !root.TryGetProperty("expected_current_revision", out JsonElement expected)
+                || !expected.TryGetInt64(out long expectedRevision) || expectedRevision < 1)
+                return Reply(response, HttpStatusCode.BadRequest, new { error = "invalid_request" });
+
+            GameProjectResult result = _projects.PublishProject(owner, projectID, expectedRevision);
+            return WriteResult(response, result);
+        }
+        catch (JsonException) { return Reply(response, HttpStatusCode.BadRequest, new { error = "invalid_json" }); }
     }
 
     private byte[] Archive(IOSHttpResponse response, UUID owner, UUID projectID)
