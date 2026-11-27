@@ -1,6 +1,6 @@
 # Creator Experience / Place API v2
 
-Status: design contract for the next additive Creator API increment. This document does not claim that these routes are implemented.
+Status: implementation contract. The authenticated Experience/Place and v2 project-revision routes are now wired through the existing Creator project handlers; continue treating each route as subject to CI and integration verification.
 
 ## Compatibility boundary
 
@@ -46,18 +46,18 @@ All IDs are UUID strings. All revision values are positive integers except an ex
 ### Create Experience
 
 ```json
-{ "name": "My Experience" }
+{}
 ```
 
-The service generates the ExperienceID. The project must exist, belong to the authenticated principal, and remain Draft.
+The service generates the ExperienceID. Identity creation is intentionally metadata-free; the Experience name and StartPlaceID are supplied in its first immutable revision. The project must exist, belong to the authenticated principal, and remain Draft.
 
 ### Create Place
 
 ```json
-{ "name": "Lobby", "description": "Starting area" }
+{}
 ```
 
-The service generates the PlaceID. The Experience must belong to the same project and owner. Creating an identity does not publish content and does not advance an Experience revision.
+The service generates the PlaceID. Place name and description are supplied with the first immutable Place revision. The Experience must belong to the same project and owner. Creating an identity does not publish content and does not advance an Experience revision.
 
 ### Save Place revision
 
@@ -65,6 +65,8 @@ The service generates the PlaceID. The Experience must belong to the same projec
 {
   "expectedCurrentRevision": 0,
   "schemaVersion": 1,
+  "name": "Lobby",
+  "description": "Starting area",
   "definition": {
     "world": {
       "worldID": "00000000-0000-0000-0000-000000000000",
