@@ -441,6 +441,60 @@ try
     Assert(!(bool)Call(projectV2Service, "SaveDraftRevision", owner, serviceProjectId, 0L,
         @"{""schemaVersion"":2}", projectExperiencePins)!,
         "GameProjectV2Service rejects a stale project revision compare-and-swap");
+    // Explicit, resumable promotion of an existing immutable v1 project revision.
+    var legacyPromotionProjectId = U("12121212-1212-4212-8212-121212121212");
+    var legacyPromotionProject = New("OpenSim.Data.GameProjectData", dataAssembly);
+    Set(legacyPromotionProject, "ProjectID", legacyPromotionProjectId);
+    Set(legacyPromotionProject, "OwnerID", owner);
+    Set(legacyPromotionProject, "Name", "Legacy Promotion");
+    Set(legacyPromotionProject, "Description", "v1 source project");
+    Set(legacyPromotionProject, "Status", 0);
+    Set(legacyPromotionProject, "SchemaVersion", 1);
+    Set(legacyPromotionProject, "CurrentRevision", 0L);
+    Set(legacyPromotionProject, "CreatedUTC", DateTime.UtcNow);
+    Set(legacyPromotionProject, "UpdatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "CreateProject", legacyPromotionProject)!,
+        "SQLite creates a legacy v1 project for explicit promotion");
+    const string legacyPromotionManifest = "{\\"SchemaVersion\\":1,\\"Name\\":\\"Legacy Promotion\\",\\"Worlds\\":[{\\"WorldID\\":\\"13131313-1313-4313-8313-131313131313\\",\\"Name\\":\\"Legacy World\\",\\"Description\\":\\"Preserve me\\",\\"SizeX\\":256,\\"SizeY\\":256,\\"SpawnPoints\\":[],\\"AssetReferences\\":[]}],\\"Settings\\":{\\"GameMode\\":\\"sandbox\\",\\"DefaultWorldID\\":\\"13131313-1313-4313-8313-131313131313\\",\\"Visibility\\":\\"private\\",\\"MaxPlayers\\":16,\\"Tags\\":[]}}";
+    var legacyPromotionRevision = New("OpenSim.Data.GameProjectRevisionData", dataAssembly);
+    Set(legacyPromotionRevision, "ProjectID", legacyPromotionProjectId);
+    Set(legacyPromotionRevision, "Revision", 1L);
+    Set(legacyPromotionRevision, "SchemaVersion", 1);
+    Set(legacyPromotionRevision, "ManifestJson", legacyPromotionManifest);
+    Set(legacyPromotionRevision, "CreatedBy", owner);
+    Set(legacyPromotionRevision, "CreatedUTC", DateTime.UtcNow);
+    Assert((bool)Call(provider, "SaveRevision", legacyPromotionRevision, owner, 0L, DateTime.UtcNow)!,
+        "legacy v1 source revision is stored before promotion");
+    var promotionMethod = projectV2ServiceType.GetMethod("PromoteLegacyProject")!;
+    Assert((bool)promotionMethod.Invoke(projectV2Service,
+        new object[] { owner, legacyPromotionProjectId, 1L })!,
+        "explicit promotion creates the immutable Experience and Place graph and v2 project revision");
+    var promotedProject = Call(provider, "GetProject", legacyPromotionProjectId)!;
+    Assert((int)Get(promotedProject, "SchemaVersion")! == 2
+        && (long)Get(promotedProject, "CurrentRevision")! == 2L,
+        "promotion advances only the project schema and current revision");
+    var preservedLegacyRevision = Call(provider, "GetRevision", legacyPromotionProjectId, 1L)!;
+    Assert((string)Get(preservedLegacyRevision, "ManifestJson")! == legacyPromotionManifest
+        && (int)Get(preservedLegacyRevision, "SchemaVersion")! == 1,
+        "promotion preserves the original v1 manifest bytes and revision number");
+    var promotedRevision = Call(provider, "GetRevision", legacyPromotionProjectId, 2L)!;
+    var promotedPins = (IList)Get(promotedRevision, "Experiences")!;
+    var deterministicPromotionID = stableExperienceMethod.Invoke(null, new[] { legacyPromotionProjectId })!;
+    Assert(promotedPins.Count == 1 && Equals(Get(promotedPins[0]!, "ExperienceID"), deterministicPromotionID),
+        "promoted project revision pins the deterministic default Experience");
+    var promotedExperience = Call(provider, "GetExperience", legacyPromotionProjectId, deterministicPromotionID)!;
+    var promotedPlaceID = U("13131313-1313-4313-8313-131313131313");
+    var promotedPlace = Call(provider, "GetPlace", legacyPromotionProjectId, deterministicPromotionID, promotedPlaceID)!;
+    Assert(promotedExperience != null && (long)Get(promotedExperience, "CurrentRevision")! == 1L
+        && promotedPlace != null && (long)Get(promotedPlace, "CurrentRevision")! == 1L,
+        "promotion persists revision-one Experience and stable WorldID-backed Place records");
+    Assert((bool)promotionMethod.Invoke(projectV2Service,
+        new object[] { owner, legacyPromotionProjectId, 1L })!,
+        "repeating a completed promotion is idempotently successful");
+    Assert(!(bool)promotionMethod.Invoke(projectV2Service,
+        new object[] { otherOwner, legacyPromotionProjectId, 1L })!,
+        "promotion rejects a different owner");
+
     var publishV2Result = Call(projectService, "PublishProject", owner, serviceProjectId, 1L)!;
     Assert((bool)Get(publishV2Result, "Success")!,
         "GameProjectService validates the immutable Experience/Place graph before publishing a v2 project");
