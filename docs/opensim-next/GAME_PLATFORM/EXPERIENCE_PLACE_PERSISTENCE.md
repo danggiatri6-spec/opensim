@@ -54,7 +54,11 @@ Existing v1 project revisions remain untouched.
 - The first explicit v2 save creates new durable Experience / Place revision records and a new project revision that pins them. Previous v1 project revisions remain available unchanged.
 - Any generated default Experience identity for a legacy project must be deterministic from ProjectID, so retries and concurrent requests cannot create duplicate default Experiences. Place IDs reuse existing WorldIDs.
 
-The deterministic identity algorithm must be specified and tested before implementing legacy write promotion. Do not use random IDs during a retryable migration.
+The deterministic identity contract is implemented by `GameProjectExperienceAdapter.GetLegacyDefaultExperienceID(ProjectID)`: UTF-8 encode `opensim-next:legacy-default-experience:v1:` plus the canonical lowercase ProjectID, SHA-256 the bytes, take the first 16 bytes, set UUID version-5 and RFC 4122 variant bits, and parse the canonical hexadecimal UUID. The prefix, input formatting, digest, truncation, and bit masks are migration compatibility rules.
+
+Explicit promotion is implemented by `GameProjectV2Service.PromoteLegacyProject(ownerID, projectID, expectedCurrentRevision)`. It only operates on an owner-authorized Draft whose current immutable revision is schema v1. It creates the deterministic default Experience, creates Place identities using the original WorldIDs, stores revision 1 for each Place and the Experience, then writes one schema-v2 project revision pinning that exact graph. It never modifies the source v1 revision.
+
+Each intermediate step is deterministic and compare-and-save based. If a process stops after creating identities or some immutable revisions, retry inspects the existing records and continues only when their contents exactly match the source manifest. Conflicting pre-existing records fail closed. If another retry commits the final project revision first, the losing caller reports success only after confirming the exact expected v2 revision and validating its graph. Reads do not auto-promote; callers must explicitly request promotion.
 
 ## 5. SQLite migration requirements
 
