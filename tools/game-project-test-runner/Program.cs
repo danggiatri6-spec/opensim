@@ -455,7 +455,7 @@ try
     Set(legacyPromotionProject, "UpdatedUTC", DateTime.UtcNow);
     Assert((bool)Call(provider, "CreateProject", legacyPromotionProject)!,
         "SQLite creates a legacy v1 project for explicit promotion");
-    const string legacyPromotionManifest = "{\\"SchemaVersion\\":1,\\"Name\\":\\"Legacy Promotion\\",\\"Worlds\\":[{\\"WorldID\\":\\"13131313-1313-4313-8313-131313131313\\",\\"Name\\":\\"Legacy World\\",\\"Description\\":\\"Preserve me\\",\\"SizeX\\":256,\\"SizeY\\":256,\\"SpawnPoints\\":[],\\"AssetReferences\\":[]}],\\"Settings\\":{\\"GameMode\\":\\"sandbox\\",\\"DefaultWorldID\\":\\"13131313-1313-4313-8313-131313131313\\",\\"Visibility\\":\\"private\\",\\"MaxPlayers\\":16,\\"Tags\\":[]}}";
+    const string legacyPromotionManifest = "{\"SchemaVersion\":1,\"Name\":\"Legacy Promotion\",\"Worlds\":[{\"WorldID\":\"13131313-1313-4313-8313-131313131313\",\"Name\":\"Legacy World\",\"Description\":\"Preserve me\",\"SizeX\":256,\"SizeY\":256,\"SpawnPoints\":[],\"AssetReferences\":[]}],\"Settings\":{\"GameMode\":\"sandbox\",\"DefaultWorldID\":\"13131313-1313-4313-8313-131313131313\",\"Visibility\":\"private\",\"MaxPlayers\":16,\"Tags\":[]}}";
     var legacyPromotionRevision = New("OpenSim.Data.GameProjectRevisionData", dataAssembly);
     Set(legacyPromotionRevision, "ProjectID", legacyPromotionProjectId);
     Set(legacyPromotionRevision, "Revision", 1L);
