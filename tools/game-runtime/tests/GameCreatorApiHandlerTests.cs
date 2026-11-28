@@ -133,6 +133,22 @@ internal static class GameCreatorApiHandlerTests
         Assert(projectV2SpoofResponse.StatusCode == 400,
             "v2 project revision route rejects body-supplied owner identity");
 
+        FakeRequest promotionSpoof = Request("POST", "/creator/projects/" + projects.ProjectID + "/promote-v1",
+            "{\\"expectedCurrentRevision\\":1,\\"ownerId\\":\\"" + UUID.Random() + "\\"}", owner);
+        FakeResponse promotionSpoofResponse = new();
+        nestedPost.Handle("/creator/projects/" + projects.ProjectID + "/promote-v1",
+            promotionSpoof.InputStream, promotionSpoof, promotionSpoofResponse);
+        Assert(promotionSpoofResponse.StatusCode == 400,
+            "legacy promotion route rejects body-supplied owner identity");
+
+        FakeRequest promotionAttempt = Request("POST", "/creator/projects/" + projects.ProjectID + "/promote-v1",
+            "{\\"expectedCurrentRevision\\":1}", owner);
+        FakeResponse promotionAttemptResponse = new();
+        nestedPost.Handle("/creator/projects/" + projects.ProjectID + "/promote-v1",
+            promotionAttempt.InputStream, promotionAttempt, promotionAttemptResponse);
+        Assert(promotionAttemptResponse.StatusCode == 409,
+            "legacy promotion route dispatches to the owner-scoped promotion service and reports invalid source state");
+
         FakeRequest create = Request("POST", "/creator/projects",
             "{\"name\":\"My Game\",\"description\":\"prototype\"}", owner);
         FakeResponse created = new();
