@@ -24,6 +24,235 @@ namespace OpenSim.Services.UserAccountService
             m_Database = database ?? throw new ArgumentNullException(nameof(database));
         }
 
+        /// <summary>
+        /// Explicitly promotes the current immutable v1 project revision into a
+        /// schema-v2 Experience/Place graph. Every intermediate identity and
+        /// revision uses deterministic IDs/content so an interrupted or
+        /// concurrent retry can safely resume without rewriting v1 history.
+        /// </summary>
+        public bool PromoteLegacyProject(UUID ownerID, UUID projectID, long expectedCurrentRevision)
+        {
+            if (ownerID == UUID.Zero || projectID == UUID.Zero || expectedCurrentRevision < 1)
+                return false;
+
+            try
+            {
+                GameProjectData project = m_Database.GetProject(projectID);
+                if (project == null || project.OwnerID != ownerID
+                    || project.Status != (int)GameProjectStatus.Draft)
+                    return false;
+
+                // An exact retry after a successful promotion is successful,
+                // but never treats an unrelated newer revision as our result.
+                if (project.CurrentRevision == expectedCurrentRevision + 1
+                    && project.SchemaVersion == SchemaVersion)
+                {
+                    GameProjectRevisionData promoted = m_Database.GetRevision(projectID, project.CurrentRevision);
+                    return IsExpectedPromotion(ownerID, projectID, expectedCurrentRevision, promoted);
+                }
+
+                if (project.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion
+                    || project.CurrentRevision != expectedCurrentRevision)
+                    return false;
+
+                GameProjectRevisionData legacyRevision =
+                    m_Database.GetRevision(projectID, expectedCurrentRevision);
+                if (legacyRevision == null || legacyRevision.CreatedBy != ownerID
+                    || legacyRevision.SchemaVersion != GameProjectManifestValidator.CurrentSchemaVersion)
+                    return false;
+
+                JsonSerializerOptions jsonOptions = CreateJsonOptions();
+                GameProjectManifest legacyManifest =
+                    JsonSerializer.Deserialize<GameProjectManifest>(legacyRevision.ManifestJson, jsonOptions);
+                if (!GameProjectManifestValidator.Validate(legacyManifest).IsValid)
+                    return false;
+
+                UUID experienceID = GameProjectExperienceAdapter.GetLegacyDefaultExperienceID(projectID);
+                GameExperienceDefinition experience =
+                    GameProjectExperienceAdapter.FromLegacyManifest(legacyManifest, experienceID);
+                if (!GameExperienceValidator.Validate(experience).IsValid)
+                    return false;
+
+                DateTime now = DateTime.UtcNow;
+                GameExperienceData experienceIdentity = m_Database.GetExperience(projectID, experienceID);
+                if (experienceIdentity == null)
+                {
+                    m_Database.CreateExperience(new GameExperienceData
+                    {
+                        ProjectID = projectID, ExperienceID = experienceID,
+                        CreatedUTC = now, UpdatedUTC = now
+                    }, ownerID);
+                    experienceIdentity = m_Database.GetExperience(projectID, experienceID);
+                }
+                if (experienceIdentity == null)
+                    return false;
+
+                List<GameExperiencePlacePin> placePins = new List<GameExperiencePlacePin>();
+                for (int index = 0; index < legacyManifest.Worlds.Count; index++)
+                {
+                    GameWorldDefinition world = legacyManifest.Worlds[index];
+                    UUID placeID = world.WorldID;
+                    GamePlaceData placeIdentity = m_Database.GetPlace(projectID, experienceID, placeID);
+                    if (placeIdentity == null)
+                    {
+                        m_Database.CreatePlace(new GamePlaceData
+                        {
+                            ProjectID = projectID, ExperienceID = experienceID, PlaceID = placeID,
+                            CreatedUTC = now, UpdatedUTC = now
+                        }, ownerID);
+                        placeIdentity = m_Database.GetPlace(projectID, experienceID, placeID);
+                    }
+                    if (placeIdentity == null)
+                        return false;
+
+                    string definitionJson = JsonSerializer.Serialize(world, jsonOptions);
+                    GamePlaceRevisionData placeRevision = m_Database.GetPlaceRevision(
+                        projectID, experienceID, placeID, 1);
+                    if (placeRevision == null && placeIdentity.CurrentRevision == 0)
+                    {
+                        var candidate = new GamePlaceRevisionData
+                        {
+                            ProjectID = projectID, ExperienceID = experienceID, PlaceID = placeID,
+                            Revision = 1, SchemaVersion = 1, Name = world.Name,
+                            Description = world.Description ?? string.Empty,
+                            DefinitionJson = definitionJson, CreatedBy = ownerID, CreatedUTC = now
+                        };
+                        m_Database.SavePlaceRevision(candidate, ownerID, 0, now);
+                        placeRevision = m_Database.GetPlaceRevision(projectID, experienceID, placeID, 1);
+                    }
+                    if (placeRevision == null || placeRevision.CreatedBy != ownerID
+                        || placeRevision.SchemaVersion != 1 || placeRevision.Name != world.Name
+                        || placeRevision.Description != (world.Description ?? string.Empty)
+                        || placeRevision.DefinitionJson != definitionJson
+                        || placeIdentity.CurrentRevision < 1)
+                        return false;
+
+                    placePins.Add(new GameExperiencePlacePin
+                    {
+                        PlaceID = placeID, PlaceRevision = 1, SortOrder = index
+                    });
+                }
+
+                GameExperienceRevisionData experienceRevision =
+                    m_Database.GetExperienceRevision(projectID, experienceID, 1);
+                if (experienceRevision == null && experienceIdentity.CurrentRevision == 0)
+                {
+                    var candidate = new GameExperienceRevisionData
+                    {
+                        ProjectID = projectID, ExperienceID = experienceID, Revision = 1,
+                        SchemaVersion = 1, Name = legacyManifest.Name,
+                        StartPlaceID = legacyManifest.Settings.DefaultWorldID,
+                        CreatedBy = ownerID, CreatedUTC = now
+                    };
+                    foreach (GameExperiencePlacePin pin in placePins)
+                        candidate.Places.Add(new GameExperiencePlaceRevisionData
+                        {
+                            PlaceID = pin.PlaceID, PlaceRevision = pin.PlaceRevision,
+                            SortOrder = pin.SortOrder
+                        });
+                    m_Database.SaveExperienceRevision(candidate, ownerID, 0, now);
+                    experienceRevision = m_Database.GetExperienceRevision(projectID, experienceID, 1);
+                }
+                if (!MatchesLegacyExperience(experienceRevision, ownerID, projectID,
+                    experienceID, legacyManifest, placePins)
+                    || experienceIdentity.CurrentRevision < 1)
+                    return false;
+
+                string v2ManifestJson = JsonSerializer.Serialize(new
+                {
+                    schemaVersion = SchemaVersion,
+                    name = legacyManifest.Name,
+                    legacySourceRevision = expectedCurrentRevision
+                }, jsonOptions);
+                var projectPins = new List<GameProjectExperienceRevisionData>
+                {
+                    new GameProjectExperienceRevisionData
+                    {
+                        ExperienceID = experienceID, ExperienceRevision = 1, SortOrder = 0
+                    }
+                };
+
+                if (SaveDraftRevision(ownerID, projectID, expectedCurrentRevision,
+                    v2ManifestJson, projectPins))
+                    return true;
+
+                // Another retry may have committed the exact same project
+                // revision while this caller was preparing its graph.
+                project = m_Database.GetProject(projectID);
+                if (project == null || project.CurrentRevision != expectedCurrentRevision + 1
+                    || project.SchemaVersion != SchemaVersion)
+                    return false;
+                return IsExpectedPromotion(ownerID, projectID, expectedCurrentRevision,
+                    m_Database.GetRevision(projectID, project.CurrentRevision));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool IsExpectedPromotion(UUID ownerID, UUID projectID, long sourceRevision,
+            GameProjectRevisionData revision)
+        {
+            if (revision == null || revision.SchemaVersion != SchemaVersion
+                || revision.CreatedBy != ownerID || revision.Revision != sourceRevision + 1
+                || revision.Experiences == null || revision.Experiences.Count != 1
+                || revision.Experiences[0].ExperienceID
+                    != GameProjectExperienceAdapter.GetLegacyDefaultExperienceID(projectID)
+                || revision.Experiences[0].ExperienceRevision != 1
+                || revision.Experiences[0].SortOrder != 0)
+                return false;
+            try
+            {
+                using JsonDocument doc = JsonDocument.Parse(revision.ManifestJson);
+                JsonElement source;
+                return doc.RootElement.TryGetProperty("legacySourceRevision", out source)
+                    && source.ValueKind == JsonValueKind.Number
+                    && source.GetInt64() == sourceRevision
+                    && ValidateRevisionGraph(ownerID, projectID, revision);
+            }
+            catch { return false; }
+        }
+
+        private static bool MatchesLegacyExperience(GameExperienceRevisionData revision,
+            UUID ownerID, UUID projectID, UUID experienceID, GameProjectManifest manifest,
+            IList<GameExperiencePlacePin> pins)
+        {
+            if (revision == null || revision.ProjectID != projectID || revision.ExperienceID != experienceID
+                || revision.Revision != 1 || revision.CreatedBy != ownerID || revision.SchemaVersion != 1
+                || revision.Name != manifest.Name || revision.StartPlaceID != manifest.Settings.DefaultWorldID
+                || revision.Places == null || revision.Places.Count != pins.Count)
+                return false;
+            for (int i = 0; i < pins.Count; i++)
+                if (revision.Places[i].PlaceID != pins[i].PlaceID
+                    || revision.Places[i].PlaceRevision != pins[i].PlaceRevision
+                    || revision.Places[i].SortOrder != pins[i].SortOrder)
+                    return false;
+            return true;
+        }
+
+        private static JsonSerializerOptions CreateJsonOptions()
+        {
+            var options = new JsonSerializerOptions();
+            options.Converters.Add(new LegacyUuidJsonConverter());
+            return options;
+        }
+
+        private sealed class LegacyUuidJsonConverter : JsonConverter<UUID>
+        {
+            public override UUID Read(ref Utf8JsonReader reader, Type typeToConvert,
+                JsonSerializerOptions options)
+            {
+                if (reader.TokenType != JsonTokenType.String
+                    || !UUID.TryParse(reader.GetString(), out UUID value))
+                    throw new JsonException("UUID values must be valid strings.");
+                return value;
+            }
+
+            public override void Write(Utf8JsonWriter writer, UUID value,
+                JsonSerializerOptions options) => writer.WriteStringValue(value.ToString());
+        }
+
         public bool ValidateRevisionGraph(UUID ownerID, UUID projectID, GameProjectRevisionData revision)
         {
             if (ownerID == UUID.Zero || projectID == UUID.Zero || revision == null
