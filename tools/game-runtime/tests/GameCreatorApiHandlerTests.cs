@@ -142,7 +142,7 @@ internal static class GameCreatorApiHandlerTests
             "legacy promotion route rejects body-supplied owner identity");
 
         FakeRequest promotionAttempt = Request("POST", "/creator/projects/" + projects.ProjectID + "/promote-v1",
-            "{\"expectedCurrentRevision\":1,\"ownerId\":\"" + UUID.Random() + "\"}", owner);
+            "{\"expectedCurrentRevision\":1}", owner);
         FakeResponse promotionAttemptResponse = new();
         nestedPost.Handle("/creator/projects/" + projects.ProjectID + "/promote-v1",
             promotionAttempt.InputStream, promotionAttempt, promotionAttemptResponse);
