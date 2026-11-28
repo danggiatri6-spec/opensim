@@ -163,3 +163,15 @@ The namespace/prefix, canonical text input, digest algorithm, truncation, and bi
 - historical v1 manifest JSON and existing v1 endpoints remain unchanged;
 - v2 publication requires a complete pinned graph;
 - request size, rate limits, HTTPS-only behavior, and no-store headers match existing Creator routes.
+
+
+## Explicit legacy v1 promotion endpoint
+
+An owner may explicitly promote the current v1 draft revision without rewriting any historical revision:
+
+- `POST /creator/projects/{projectId}/promote-v1`
+- Request: `{"expectedCurrentRevision": 1}`
+- Success: `{"promoted":true,"schemaVersion":2,"revision":2}`
+- A stale source revision, published/archived project, invalid v1 manifest, conflicting partially-created graph, or foreign owner fails closed with HTTP 409/404 as appropriate.
+
+The endpoint reuses the parent project handler's HTTPS, authentication, owner principal, and rate-limit decision. Promotion is not triggered by GET/read operations. Its service operation is retry-safe: deterministic Experience identity, original WorldIDs as PlaceIDs, exact-content checks for already-created revision-one records, and verification of the final v2 graph before treating a concurrent retry as success.
