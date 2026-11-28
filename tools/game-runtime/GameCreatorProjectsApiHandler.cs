@@ -62,7 +62,7 @@ public sealed class GameCreatorProjectsApiHandler : BaseStreamHandler
 
         string[] segments = request.UriPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (segments.Length >= 4 && segments[0] == "creator" && segments[1] == "projects"
-            && (segments[3] == "experiences"
+            && (segments[3] == "experiences" || segments[3] == "promote-v1"
                 || (segments[3] == "revisions" && segments.Length == 5 && segments[4] == "v2")))
         {
             if (_experienceApi is null)
