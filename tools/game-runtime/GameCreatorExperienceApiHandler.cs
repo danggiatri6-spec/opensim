@@ -130,6 +130,9 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
             }
         }
 
+        if (s.Length == 4 && s[3] == "promote-v1" && HttpMethod == "POST")
+            return PromoteLegacyProject(requestData, request, response, owner, projectID);
+
         if (s.Length == 5 && s[3] == "revisions" && s[4] == "v2" && HttpMethod == "PUT")
             return SaveProjectV2Revision(requestData, request, response, owner, projectID);
 
@@ -220,6 +223,27 @@ public sealed class GameCreatorExperienceApiHandler : BaseStreamHandler
                 expected, schema, name, start, pins);
             return saved ? Reply(response, HttpStatusCode.OK, new { saved = true, revision = expected + 1 })
                 : Reply(response, HttpStatusCode.Conflict, new { error = "revision_conflict_or_invalid_graph" });
+        }
+    }
+
+    private byte[] PromoteLegacyProject(Stream body, IOSHttpRequest request,
+        IOSHttpResponse response, UUID owner, UUID projectID)
+    {
+        if (!ReadObject(body, request, out JsonDocument? doc, out HttpStatusCode error))
+            return Reply(response, error, new { error = "invalid_request" });
+        using (doc)
+        {
+            JsonElement root = doc!.RootElement;
+            if (HasOwnerField(root) || !Long(root, "expectedCurrentRevision", out long expected)
+                || expected < 1)
+                return BadRequest(response);
+
+            bool promoted = _projectsV2.PromoteLegacyProject(owner, projectID, expected);
+            return promoted
+                ? Reply(response, HttpStatusCode.OK,
+                    new { promoted = true, schemaVersion = 2, revision = expected + 1 })
+                : Reply(response, HttpStatusCode.Conflict,
+                    new { error = "promotion_conflict_or_invalid_legacy_project" });
         }
     }
 
