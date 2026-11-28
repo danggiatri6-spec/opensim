@@ -120,6 +120,7 @@ namespace OpenSim.Services.UserAccountService
                         };
                         m_Database.SavePlaceRevision(candidate, ownerID, 0, now);
                         placeRevision = m_Database.GetPlaceRevision(projectID, experienceID, placeID, 1);
+                        placeIdentity = m_Database.GetPlace(projectID, experienceID, placeID);
                     }
                     if (placeRevision == null || placeRevision.CreatedBy != ownerID
                         || placeRevision.SchemaVersion != 1 || placeRevision.Name != world.Name
