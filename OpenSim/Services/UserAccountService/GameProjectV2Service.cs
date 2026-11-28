@@ -153,6 +153,7 @@ namespace OpenSim.Services.UserAccountService
                         });
                     m_Database.SaveExperienceRevision(candidate, ownerID, 0, now);
                     experienceRevision = m_Database.GetExperienceRevision(projectID, experienceID, 1);
+                    experienceIdentity = m_Database.GetExperience(projectID, experienceID);
                 }
                 if (!MatchesLegacyExperience(experienceRevision, ownerID, projectID,
                     experienceID, legacyManifest, placePins)
